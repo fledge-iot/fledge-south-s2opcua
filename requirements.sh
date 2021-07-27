@@ -37,10 +37,10 @@ fi
 git clone https://github.com/libexpat/libexpat.git
 (
 	cd libexpat/expat
-	rm -f CMakeCache.txt
-	mkdir -p build
-	cd build
-	cmake -D CMAKE_INSTALL_PREFIX=/usr/local -D EXPAT_BUILD_PKGCONFIG=ON -D EXPAT_ENABLE_INSTALL=ON -D EXPAT_SHARED_LIBS=ON .. && make -j4 && sudo make install
+	./buildconf.sh && \
+	./configure && \
+	make && \
+	make install
 )
 
 # libcheck:
