@@ -40,7 +40,7 @@ git clone https://github.com/libexpat/libexpat.git
 	./buildconf.sh && \
 	./configure && \
 	make && \
-	make install
+	sudo make install
 )
 
 # libcheck:
