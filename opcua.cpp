@@ -528,8 +528,14 @@ Logger	*logger = Logger::getLogger();
 		security.path_key_cli = keyClient.c_str();
 		if (access(security.path_key_cli, R_OK))
 		{
-			logger->error("Unable to access Client key %s", security.path_key_cli);
-			return;
+			// If not in pem subdirectory try without subdirectory
+			string altKeyClient = certstore + m_clientPrivate + ".pem";
+			security.path_key_cli = altKeyClient.c_str();
+			if (access(security.path_key_cli, R_OK))
+			{
+				logger->error("Unable to access Client key %s", keyClient.c_str());
+				return;
+			}
 		}
 		logger->info("Using Client key %s", security.path_cert_cli);
 	}
