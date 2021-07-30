@@ -55,7 +55,7 @@ index e2fa388ff..b4babe046 100644
              if (SOPC_STATUS_OK != status)
 -            {
 -                Helpers_Log(SOPC_LOG_LEVEL_ERROR, "Failed to create PKI.");
-+            {	
++            {
 +                Helpers_Log(SOPC_LOG_LEVEL_ERROR, "Failed to create PKI, status=%d", status);
              }
          }
@@ -90,7 +90,7 @@ index e2fa388ff..b4babe046 100644
 +                *(double*) plsVal->value = (double) pVal->Value.Value.Doublev;
 +            }
 +            break;
-+			
++
          case SOPC_Null_Id:
 -        case SOPC_Float_Id:
 -        case SOPC_Double_Id:
