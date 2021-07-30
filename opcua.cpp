@@ -524,7 +524,7 @@ Logger	*logger = Logger::getLogger();
 	}
 	if (m_clientPrivate.length())
 	{
-		string keyClient = certstore + m_clientPrivate + ".pem";
+		string keyClient = certstore + "pem/" + m_clientPrivate + ".pem";
 		security.path_key_cli = keyClient.c_str();
 		if (access(security.path_key_cli, R_OK))
 		{
