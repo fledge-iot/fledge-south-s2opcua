@@ -1,0 +1,12 @@
+#!/bin/bash
+
+echo Remove artifacts added by requirements.sh to enable a fresh run of requirements.sh
+echo -n "Enter YES to continue: "
+read continue
+if [ "$continue" != 'YES' ]; then
+    echo Cleanup not done
+else
+    rm -rf check-0.15.2 && rm check-0.15.2.tar.gz* && rm -rf S2OPC && rm -rf libexpat
+    echo Cleanup completed
+fi
+

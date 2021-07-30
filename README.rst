@@ -134,11 +134,11 @@ To build S2OPC and its dependencies:
 
   $ cd ~/dev
   $ git clone https://gitlab.com/systerel/S2OPC.git --branch S2OPC_Toolkit_1.1.0
-  $ git clone https://github.com/dianomic/fledge-south-s2opcua.git
+  $ git clone https://github.com/fledge-iot/fledge-south-s2opcua.git
   $ cp fledge-south-s2opcua/S2OPC.patch S2OPC/
   $ cd S2OPC
   $ git apply S2OPC.patch   # apply S2OPC code changes
-  $ BUILD_SHARED_LIBS=ON; CMAKE_INSTALL_PREFIX=/usr/local; ./build.sh; echo; echo "BUILD done, INSTALLING..."; echo; cd build; sudo make install; cd -
+  $ BUILD_SHARED_LIBS=OFF; CMAKE_INSTALL_PREFIX=/usr/local; ./build.sh; echo; echo "BUILD done, INSTALLING..."; echo; cd build; sudo make install; cd -
 
 Alternatively run the script requirements.sh to automate this and place a copy of the S2OPC shared library and its dependencies in /usr/local/lib.
 
