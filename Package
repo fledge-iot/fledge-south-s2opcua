@@ -8,7 +8,7 @@ additional_libs="usr/local/lib:/usr/local/lib/libs2opc_common.so,usr/local/lib:/
 #   1. Generic packages we depend on in all architectures and package managers
 #   2. Architecture specific packages we depend on
 #   3. Package manager specific packages we depend on
-requirements="fledge, libmbedtls-dev"
+requirements="fledge"
 
 case "$arch" in
 	x86_64)
@@ -20,7 +20,7 @@ case "$arch" in
 esac
 case "$package_manager" in
     deb)
-        requirements="${requirements}"
+        requirements="${requirements},libmbedtls-dev"
         ;;
     rpm)
         echo "RPM Package building for ${plugin_name} is not supported on $arch architecture!!"
