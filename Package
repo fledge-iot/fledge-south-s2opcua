@@ -3,12 +3,14 @@
 plugin_name=s2opcua
 plugin_type=south
 plugin_install_dirname=${plugin_name}
-
+additional_libs="/usr/local/lib:/usr/local/lib/libs2opc_common.so,/usr/local/lib:/usr/l
+ocal/lib/libs2opc_clientserver.so,/usr/local/lib:/usr/local/lib/libs2opc_clientwrapper.
+so,/usr/local/lib:/usr/local/lib/libexpat.so.1"
 # Now build up the runtime requirements list. This has 3 components
 #   1. Generic packages we depend on in all architectures and package managers
 #   2. Architecture specific packages we depend on
 #   3. Package manager specific packages we depend on
-requirements="fledge"
+requirements="fledge, libmbedtls-dev"
 
 case "$arch" in
 	x86_64)
