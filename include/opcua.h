@@ -134,6 +134,11 @@ class OPCUA
 		
         bool                 	m_disableCertVerif;
         uint32_t             	m_maxKeepalive;
+	char			*m_path_cert_auth;
+	char			*m_path_crl;
+	char			*m_path_cert_srv;
+	char			*m_path_cert_cli;
+	char			*m_path_key_cli;
 };
 
 #endif

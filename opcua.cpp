@@ -190,7 +190,12 @@ DatapointValue* dpv = NULL;
 OPCUA::OPCUA(const string& url) : m_url(url), 
 				m_connected(false), m_publishPeriod(1000),
 				m_maxKeepalive(30), m_tokenTarget(1),
-				m_disableCertVerif(false)
+				m_disableCertVerif(false),
+				m_path_cert_auth(NULL),
+				m_path_crl(NULL),
+				m_path_cert_srv(NULL),
+				m_path_cert_cli(NULL),
+				m_path_key_cli(NULL)
 {
 	opcua = this;
 }
@@ -321,6 +326,12 @@ Logger *logger = Logger::getLogger();
 	{
 		browse(*it, variables);
 	}
+
+	if (variables.size() == 0)
+	{
+		logger->error("No variables found to be monitored");
+		return 0;
+	}
 	char **node_ids = (char **)malloc(variables.size() * sizeof(char *));
 	if (!node_ids)
 	{
@@ -340,9 +351,23 @@ Logger *logger = Logger::getLogger();
 		}
 	}
 	res = SOPC_ClientHelper_AddMonitoredItems(m_connectionId, node_ids, variables.size());
-	if (res != 0)
+	switch (res)
 	{
-		logger->error("Failed to add monitored items, %d", res);
+	case 0:
+		logger->debug("Added %d monitored items", variables.size());
+		break;
+	case -1:
+		logger->error("Failed to add monitored items, connection not valid");
+		break;
+	case -2:
+		logger->error("Failed to add monitored items, invalid nodes for %d nodes", variables.size());
+		break;
+	case -100:
+		logger->error("Failed to add monitored items");
+		break;
+	default:
+		logger->error("Failed to add monitored items, nodeid '%s' not valid", node_ids[abs(res) - 3]);
+		break;
 	}
 	for (i = 0; i < variables.size(); i++)
 	{
@@ -370,7 +395,11 @@ SOPC_ClientHelper_Security security;
 Logger	*logger = Logger::getLogger();
 
 
-	SOPC_ClientHelper_Initialize("/tmp/s2opc_wrapper_subscribe_logs/", SOPC_LOG_LEVEL_DEBUG, disconnect_callback);
+	if (SOPC_ClientHelper_Initialize("/tmp/s2opc_wrapper_subscribe_logs/", SOPC_LOG_LEVEL_DEBUG, disconnect_callback) != 0)
+	{
+		logger->fatal("Unable to initialise S2OPC library");
+		throw runtime_error("Unable to initialise library");
+	}
 
 	int res;
 	SOPC_ClientHelper_GetEndpointsResult *endpoints;
@@ -381,19 +410,19 @@ Logger	*logger = Logger::getLogger();
 		for (int32_t i = 0; i < endpoints->nbOfEndpoints; i++)
 		{
 			logger->info("%d - url: %s\n", i, endpoints->endpoints[i].endpointUrl);
-			logger->info("  - security level: %d\n", endpoints->endpoints[i].securityLevel);
-			logger->info("  - security mode: %d\n", endpoints->endpoints[i].security_mode);
-			logger->info("  - security policy Uri: %s\n", endpoints->endpoints[i].security_policyUri);
-			logger->info("  - transport profile Uri: %s\n", endpoints->endpoints[i].transportProfileUri);
+			logger->info("%d - security level: %d\n", i, endpoints->endpoints[i].securityLevel);
+			logger->info("%d - security mode: %d\n", i, endpoints->endpoints[i].security_mode);
+			logger->info("%d - security policy Uri: %s\n", i, endpoints->endpoints[i].security_policyUri);
+			logger->info("%d - transport profile Uri: %s\n", i, endpoints->endpoints[i].transportProfileUri);
 
 			SOPC_ClientHelper_UserIdentityToken* userIds = endpoints->endpoints[i].userIdentityTokens;
 			for (int32_t j = 0; j < endpoints->endpoints[i].nbOfUserIdentityTokens; j++)
 			{
-				logger->info("%3d - policy Id: %s\n", j, userIds[j].policyId);
-				logger->info("    - token type: %d\n", userIds[j].tokenType);
-				logger->info("    - issued token type: %s\n", userIds[j].issuedTokenType);
-				logger->info("    - issuer endpoint Url: %s\n", userIds[j].issuerEndpointUrl);
-				logger->info("    - security policy Uri: %s\n", userIds[j].securityPolicyUri);
+				logger->info("%d %d - policy Id: %s\n", i, j, userIds[j].policyId);
+				logger->info("%d %d - token type: %d\n", i, j, userIds[j].tokenType);
+				logger->info("%d %d - issued token type: %s\n", i, j, userIds[j].issuedTokenType);
+				logger->info("%d %d - issuer endpoint Url: %s\n", i, j, userIds[j].issuerEndpointUrl);
+				logger->info("%d %d - security policy Uri: %s\n", i, j, userIds[j].securityPolicyUri);
 			}
 		}
 	}
@@ -401,11 +430,18 @@ Logger	*logger = Logger::getLogger();
 	{
 		logger->error("Unable to retrieve OPCUA endpoints: %d", res);
 	}
+
+
 	security.security_policy = m_secPolicy.c_str();
 	security.security_mode = m_secMode;
+	if (m_secMode == OpcUa_MessageSecurityMode_None)
+	{
+		security.security_policy = SOPC_SecurityPolicy_None_URI;
+	}
 	security.policyId = m_authPolicy.c_str();
 	if (!strcmp(security.policyId, "anonymous"))
 	{
+		logger->info("Using anonymous authentication policy");
 		security.username = NULL;
 		security.password = NULL;
 	}
@@ -413,58 +449,6 @@ Logger	*logger = Logger::getLogger();
 	{
 		security.username = m_username.c_str();
 		security.password = m_password.c_str();
-	}
-
-
-	// Check for a matching endpoint
-	if (endpoints && endpoints->endpoints)
-	{
-		bool matched = false;
-		bool matchedMode = false;
-		bool matchedPolicyURL = false;
-		bool matchedPolicyId = false;
-		for (int32_t i = 0; i < endpoints->nbOfEndpoints; i++)
-		{
-			if (endpoints->endpoints[i].security_mode != m_secMode)
-			{
-				continue;
-			}
-			else
-			{
-				matchedMode = true;
-			}
-			if (endpoints->endpoints[i].security_policyUri &&
-					strcmp(endpoints->endpoints[i].security_policyUri, security.security_policy))
-			{
-				continue;
-			}
-			else
-			{
-				matchedPolicyURL = true;
-			}
-			SOPC_ClientHelper_UserIdentityToken* userIds = endpoints->endpoints[i].userIdentityTokens;
-			for (int32_t j = 0; j < endpoints->endpoints[i].nbOfUserIdentityTokens; j++)
-			{
-				if (userIds[j].policyId && strcmp(security.policyId, userIds[j].policyId))
-					continue;
-				else
-					matchedPolicyId = true;
-				matched = true;
-			}
-		}
-		if (!matched)
-		{
-			logger->fatal("Failed to match any server endpoints");
-			if (!matchedMode)
-				logger->error("There are no endpoints that match the security mode requested");
-			if (!matchedPolicyURL)
-				logger->error("There are no endpoints that match the Policy URL %s",
-						security.security_policy);
-			if (!matchedPolicyId)
-				logger->error("There are no endpoints that match the Policy Id %s",
-						security.policyId);
-			throw runtime_error("Failed to find matching endpoint in OPC/UA server");
-		}
 	}
 
 	string certstore = "/usr/local/fledge/data";
@@ -481,7 +465,8 @@ Logger	*logger = Logger::getLogger();
 	if (m_certAuth.length())
 	{
 		string cacert = certstore + m_certAuth + ".der";
-		security.path_cert_auth = cacert.c_str();
+		m_path_cert_auth = strdup(cacert.c_str());
+		security.path_cert_auth = m_path_cert_auth;
 		if (access(security.path_cert_auth, R_OK))
 		{
 			logger->error("Unable to access CA Certificate %s", security.path_cert_auth);
@@ -489,10 +474,16 @@ Logger	*logger = Logger::getLogger();
 		}
 		logger->info("Using CA Cert %s", security.path_cert_auth);
 	}
+	else
+	{
+		security.path_cert_auth = NULL;
+		logger->warn("No CA Cert has been configured");
+	}
 	if (m_caCrl.length())
 	{
 		string crl = certstore + m_caCrl + ".der";
-		security.path_crl = crl.c_str();
+		m_path_crl = strdup(crl.c_str());
+		security.path_crl = m_path_crl;
 		if (access(security.path_crl, R_OK))
 		{
 			logger->error("Unable to access CRL Certificate %s", security.path_crl);
@@ -500,10 +491,16 @@ Logger	*logger = Logger::getLogger();
 		}
 		logger->info("Using CRL Cert %s", security.path_crl);
 	}
+	else
+	{
+		security.path_crl = NULL;
+		logger->warn("No Certificate Revocation List has been configured");
+	}
 	if (m_serverPublic.length())
 	{
 		string certSrv = certstore + m_serverPublic + ".der";
-		security.path_cert_srv = certSrv.c_str();
+		m_path_cert_srv = strdup(certSrv.c_str());
+		security.path_cert_srv = m_path_cert_srv;
 		if (access(security.path_cert_srv, R_OK))
 		{
 			logger->error("Unable to access Server Certificate %s", security.path_cert_srv);
@@ -511,10 +508,16 @@ Logger	*logger = Logger::getLogger();
 		}
 		logger->info("Using Srv Cert %s", security.path_cert_srv);
 	}
+	else
+	{
+		security.path_cert_srv = NULL;
+		logger->warn("No Server Certificate has been configured");
+	}
 	if (m_clientPublic.length())
 	{
 		string certClient = certstore + m_clientPublic + ".der";
-		security.path_cert_cli = certClient.c_str();
+	       	m_path_cert_cli = strdup(certClient.c_str());
+		security.path_cert_cli = m_path_cert_cli;
 		if (access(security.path_cert_cli, R_OK))
 		{
 			logger->error("Unable to access Client Certificate %s", security.path_cert_cli);
@@ -522,28 +525,104 @@ Logger	*logger = Logger::getLogger();
 		}
 		logger->info("Using Client Cert %s", security.path_cert_cli);
 	}
+	else
+	{
+		security.path_cert_cli = NULL;
+		logger->warn("No Client Certificate has been configured");
+	}
 	if (m_clientPrivate.length())
 	{
 		string keyClient = certstore + "pem/" + m_clientPrivate + ".pem";
-		security.path_key_cli = keyClient.c_str();
-		if (access(security.path_key_cli, R_OK))
+		m_path_key_cli = strdup(keyClient.c_str());
+		security.path_key_cli = m_path_key_cli;
+		if (access(security.path_key_cli, R_OK) != F_OK)
 		{
 			// If not in pem subdirectory try without subdirectory
 			string altKeyClient = certstore + m_clientPrivate + ".pem";
-			security.path_key_cli = altKeyClient.c_str();
-			if (access(security.path_key_cli, R_OK))
+			free(m_path_key_cli);
+			m_path_key_cli = strdup(altKeyClient.c_str());
+			security.path_key_cli = m_path_key_cli;
+			if (access(security.path_key_cli, R_OK) != F_OK)
 			{
-				logger->error("Unable to access Client key %s", keyClient.c_str());
+				logger->error("Unable to access Client key %s", security.path_key_cli);
 				return;
 			}
 		}
-		logger->info("Using Client key %s", security.path_cert_cli);
+		logger->info("Using Client key %s", security.path_key_cli);
+	}
+	else
+	{
+		security.path_key_cli = NULL;
+		logger->warn("No Client Key has been configured");
+	}
+
+	// Check for a matching endpoint
+	if (endpoints && endpoints->endpoints)
+	{
+		bool matched = false;
+		bool matchedMode = false;
+		bool matchedPolicyURL = false;
+		bool matchedPolicyId = false;
+		for (int32_t i = 0; i < endpoints->nbOfEndpoints && matched == false; i++)
+		{
+			if (endpoints->endpoints[i].security_mode != m_secMode)
+			{
+				logger->debug("%d: security mode does not match %d", i, m_secMode);
+				continue;
+			}
+			else
+			{
+				matchedMode = true;
+			}
+			if (endpoints->endpoints[i].security_policyUri &&
+					strcmp(endpoints->endpoints[i].security_policyUri, security.security_policy))
+			{
+				logger->debug("%d: security policy mismatch %s != %s", i, endpoints->endpoints[i].security_policyUri, security.security_policy);
+				continue;
+			}
+			else
+			{
+				matchedPolicyURL = true;
+			}
+			logger->debug("%d: checking user ID tokens", i);
+			SOPC_ClientHelper_UserIdentityToken* userIds = endpoints->endpoints[i].userIdentityTokens;
+			for (int32_t j = 0; matched == false && j < endpoints->endpoints[i].nbOfUserIdentityTokens; j++)
+			{
+				if (userIds[j].policyId && strcmp(security.policyId, userIds[j].policyId))
+				{
+					logger->debug("%d: '%s' != '%s'", i, security.policyId, userIds[j].policyId);
+					continue;
+				}
+				else
+				{
+					matchedPolicyId = true;
+				}
+				matched = true;
+			}
+		}
+		if (!matched)
+		{
+			logger->fatal("Failed to match any server endpoints");
+			if (!matchedMode)
+				logger->error("There are no endpoints that match the security mode requested");
+			if (!matchedPolicyURL)
+				logger->error("There are no endpoints that match the Policy URL %s",
+						security.security_policy);
+			if (!matchedPolicyId)
+				logger->error("There are no endpoints that match the Policy Id %s",
+						security.policyId);
+			throw runtime_error("Failed to find matching endpoint in OPC/UA server");
+		}
+		else
+		{
+			logger->info("Matched Endpoint with OPCUA server");
+		}
 	}
 
 	m_configurationId = SOPC_ClientHelper_CreateConfiguration(m_url.c_str(), &security);
 	if (m_configurationId <= 0)
 	{
-		logger->fatal("Failed to create configuration %d", m_configurationId);
+		logger->fatal("Failed to create configuration for endpoint '%s' %d", m_url.c_str(), m_configurationId);
 		switch (m_configurationId)
 		{
 			case 0:
@@ -587,9 +666,14 @@ Logger	*logger = Logger::getLogger();
 	}
 
 	m_connectionId = SOPC_ClientHelper_CreateConnection(m_configurationId);
-	if (m_configurationId <= 0)
+	if (m_connectionId == -1)
 	{
-		logger->fatal("Failed to create OPC/UA connection to server %s", m_url.c_str());
+		logger->fatal("Failed to create OPC/UA connection to server %s, invalid configuration detected", m_url.c_str());
+		return;
+	}
+	if (m_connectionId == -100)
+	{
+		logger->fatal("Failed to create OPC/UA connection to server %s, connection failed", m_url.c_str());
 		return;
 	}
 
@@ -636,7 +720,38 @@ OPCUA::stop()
 		SOPC_ClientHelper_Unsubscribe(m_connectionId);
 		SOPC_ClientHelper_Disconnect(m_connectionId);
 	}
+	SOPC_ClientHelper_Finalize();
 	// TODO Cleanup memory
+	if (m_path_cert_auth)
+	{
+		free(m_path_cert_auth);
+		m_path_cert_auth = NULL;
+	}
+	if (m_path_cert_auth)
+	{
+		free(m_path_cert_auth);
+		m_path_cert_auth = NULL;
+	}
+	if (m_path_crl)
+	{
+		free(m_path_crl);
+		m_path_crl = NULL;
+	}
+	if (m_path_cert_srv)
+	{
+		free(m_path_cert_srv);
+		m_path_cert_srv = NULL;
+	}
+	if (m_path_cert_cli)
+	{
+		free(m_path_cert_cli);
+		m_path_cert_cli = NULL;
+	}
+	if (m_path_key_cli)
+	{
+		free(m_path_key_cli);
+		m_path_key_cli = NULL;
+	}
 }
 
 /**
@@ -702,8 +817,8 @@ void OPCUA::browse(const string& nodeid, vector<string>& variables)
         SOPC_ClientHelper_BrowseRequest browseRequest;
         SOPC_ClientHelper_BrowseResult browseResult;
 
-        browseRequest.nodeId = (char *)nodeid.c_str();                      // Root/Objects/
-        browseRequest.direction = OpcUa_BrowseDirection_Forward; // forward
+        browseRequest.nodeId = (char *)nodeid.c_str();           // Root/Objects/
+        browseRequest.direction = OpcUa_BrowseDirection_Both; // forward
         browseRequest.referenceTypeId = "";                      // all reference types
         browseRequest.includeSubtypes = true;
 
@@ -719,17 +834,16 @@ void OPCUA::browse(const string& nodeid, vector<string>& variables)
 	Logger::getLogger()->debug("status: %d, nbOfResults: %d", browseResult.statusCode, browseResult.nbOfReferences);
 
 	bool subscribeChild = false;
-	if (browseResult.nbOfReferences == 1 
-			&& strcmp(browseResult.references[0].displayName, "BaseDataVariableType") == 0)
-	{
-		variables.push_back(nodeid);
-	}
-	else if (strcmp(browseResult.references[0].displayName, "FolderType") == 0)
-	{
-		subscribeChild = true;
-	}
         for (int32_t i = 0; i < browseResult.nbOfReferences; i++)
         {
+		if (strcmp(browseResult.references[i].displayName, "FolderType") == 0)
+		{
+			subscribeChild = true;
+		}
+		if (strcmp(browseResult.references[i].displayName, "BaseDataVariableType") == 0)
+		{
+			variables.push_back(nodeid);
+		}
 		Logger::getLogger()->debug("Item #%d: NodeId %s, displayName %s",
 			       	i, browseResult.references[i].nodeId,
 				browseResult.references[i].displayName);

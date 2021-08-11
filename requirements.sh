@@ -57,7 +57,7 @@ tar xf check-0.15.2.tar.gz
 )
 
 # S2OPC
-git clone https://gitlab.com/systerel/S2OPC.git --branch S2OPC_Toolkit_1.1.0
+git clone https://gitlab.com/systerel/S2OPC.git
 (
 	cd S2OPC
 	cp ../S2OPC.patch .
