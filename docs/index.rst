@@ -69,7 +69,7 @@ The configuration parameters that can be set on this page are;
 
   - **Password**: Specify the password to use for authentication. This is only used if the *User authentication policy* is set to *username*.
 
-  - **CA certificate authority**: The name of the root certificate authorities certificate in DER format. This is the certificate authority that forms the root of trust and signs the certificates that will be trusted. If using self signed certificates ths should be left blank.
+  - **CA certificate authority**: The name of the root certificate authorities certificate in DER format. This is the certificate authority that forms the root of trust and signs the certificates that will be trusted. If using self signed certificates this should be left blank.
 
   - **Server public key**: The name of the public key of the OPC/UA server specified in the *OPCUA Server URL*. This should be a DER format certificate signed by the certificate authority.
 
