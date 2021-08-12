@@ -112,7 +112,7 @@ const char *default_config = QUOTE({
     "caCert" : {
             "description" : "CA certificate authority file in DER format" ,
             "type" : "string",
-            "default" : "cacert",
+            "default" : "",
             "displayName" : "CA certificate authority",
             "order" : "11",
             "validity": " securityMode == \"Sign\" || securityMode == \"SignAndEncrypt\" "
@@ -120,7 +120,7 @@ const char *default_config = QUOTE({
     "serverCert" : {
             "description" : "Server certificate in the DER format" ,
             "type" : "string",
-            "default" : "OPCUAServer",
+            "default" : "",
             "displayName" : "Server public key",
             "order" : "12",
             "validity": " securityMode == \"Sign\" || securityMode == \"SignAndEncrypt\" "
@@ -128,7 +128,7 @@ const char *default_config = QUOTE({
     "clientCert" : {
             "description" : "Client public key file in DER format" ,
             "type" : "string",
-            "default" : "clientcert",
+            "default" : "",
             "displayName" : "Client public key",
             "order" : "13",
             "validity": " securityMode == \"Sign\" || securityMode == \"SignAndEncrypt\" "
@@ -136,7 +136,7 @@ const char *default_config = QUOTE({
     "clientKey" : {
             "description" : "Client private key file in DER format" ,
             "type" : "string",
-            "default" : "clientkey",
+            "default" : "",
             "displayName" : "Client private key",
             "order" : "14",
             "validity": " securityMode == \"Sign\" || securityMode == \"SignAndEncrypt\" "
@@ -144,7 +144,7 @@ const char *default_config = QUOTE({
     "caCrl" : {
             "description" : "Certificate Revocation List in DER format" ,
             "type" : "string",
-            "default" : "cacrl",
+            "default" : "",
             "displayName" : "Certificate revocation list",
             "order" : "15",
             "validity": " securityMode == \"Sign\" || securityMode == \"SignAndEncrypt\" "
@@ -354,6 +354,7 @@ OPCUA        *opcua = (OPCUA *)*handle;
 
     opcua->stop();
     parse_config(opcua, config, true);
+    Logger::getLogger()->info("UPC UA plugin restart in progress...");
     opcua->start();
     Logger::getLogger()->info("UPC UA plugin restarted after reconfigure");
 }
