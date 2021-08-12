@@ -615,7 +615,7 @@ Logger	*logger = Logger::getLogger();
 		}
 		else
 		{
-			logger->info("Matched Endpoint with OPCUA server");
+			logger->info("At least one Endpoint matched with OPCUA server");
 		}
 	}
 
