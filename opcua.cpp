@@ -579,7 +579,7 @@ Logger	*logger = Logger::getLogger();
 			}
 			else
 			{
-				logger->debug("Endpoint %d matches on security mode", i);
+				logger->debug("Endpoint %d matches on security mode %s", i, securityMode(m_secMode).c_str());
 				matchedMode = true;
 			}
 			if (endpoints->endpoints[i].security_policyUri &&
@@ -590,7 +590,7 @@ Logger	*logger = Logger::getLogger();
 			}
 			else
 			{
-				logger->debug("Endpoint %d matches on security policy", i);
+				logger->debug("Endpoint %d matches on security policy %s", i, security.security_policy);
 				matchedPolicyURL = true;
 			}
 			logger->debug("%d: checking user ID tokens", i);
@@ -605,7 +605,7 @@ Logger	*logger = Logger::getLogger();
 				else
 				{
 					matchedPolicyId = true;
-					logger->debug("Endpoint %d matches on policyId", i);
+					logger->debug("Endpoint %d matches on policyId %s", i, security.policyId);
 				}
 				matched = true;
 			}
