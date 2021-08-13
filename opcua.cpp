@@ -395,7 +395,8 @@ SOPC_ClientHelper_Security security;
 Logger	*logger = Logger::getLogger();
 
 
-	if (SOPC_ClientHelper_Initialize("/tmp/s2opc_wrapper_subscribe_logs/", SOPC_LOG_LEVEL_DEBUG, disconnect_callback) != 0)
+	if (SOPC_ClientHelper_Initialize("/tmp/s2opc_wrapper_subscribe_logs/",
+				SOPC_LOG_LEVEL_ERROR, disconnect_callback) != 0)
 	{
 		logger->fatal("Unable to initialise S2OPC library");
 		throw runtime_error("Unable to initialise library");
@@ -470,6 +471,7 @@ Logger	*logger = Logger::getLogger();
 		if (access(security.path_cert_auth, R_OK))
 		{
 			logger->error("Unable to access CA Certificate %s", security.path_cert_auth);
+			SOPC_ClientHelper_Finalize();
 			return;
 		}
 		logger->info("Using CA Cert %s", security.path_cert_auth);
@@ -487,6 +489,7 @@ Logger	*logger = Logger::getLogger();
 		if (access(security.path_crl, R_OK))
 		{
 			logger->error("Unable to access CRL Certificate %s", security.path_crl);
+			SOPC_ClientHelper_Finalize();
 			return;
 		}
 		logger->info("Using CRL Cert %s", security.path_crl);
@@ -504,6 +507,7 @@ Logger	*logger = Logger::getLogger();
 		if (access(security.path_cert_srv, R_OK))
 		{
 			logger->error("Unable to access Server Certificate %s", security.path_cert_srv);
+			SOPC_ClientHelper_Finalize();
 			return;
 		}
 		logger->info("Using Srv Cert %s", security.path_cert_srv);
@@ -521,6 +525,7 @@ Logger	*logger = Logger::getLogger();
 		if (access(security.path_cert_cli, R_OK))
 		{
 			logger->error("Unable to access Client Certificate %s", security.path_cert_cli);
+			SOPC_ClientHelper_Finalize();
 			return;
 		}
 		logger->info("Using Client Cert %s", security.path_cert_cli);
@@ -545,6 +550,7 @@ Logger	*logger = Logger::getLogger();
 			if (access(security.path_key_cli, R_OK) != F_OK)
 			{
 				logger->error("Unable to access Client key %s", security.path_key_cli);
+				SOPC_ClientHelper_Finalize();
 				return;
 			}
 		}
@@ -559,6 +565,7 @@ Logger	*logger = Logger::getLogger();
 	// Check for a matching endpoint
 	if (endpoints && endpoints->endpoints)
 	{
+		logger->debug("Endpoint matching starting....");
 		bool matched = false;
 		bool matchedMode = false;
 		bool matchedPolicyURL = false;
@@ -567,11 +574,12 @@ Logger	*logger = Logger::getLogger();
 		{
 			if (endpoints->endpoints[i].security_mode != m_secMode)
 			{
-				logger->debug("%d: security mode does not match %d", i, m_secMode);
+				logger->debug("%d: security mode does not match %s", i, securityMode(m_secMode).c_str());
 				continue;
 			}
 			else
 			{
+				logger->debug("Endpoint %d matches on security mode %s", i, securityMode(m_secMode).c_str());
 				matchedMode = true;
 			}
 			if (endpoints->endpoints[i].security_policyUri &&
@@ -582,6 +590,7 @@ Logger	*logger = Logger::getLogger();
 			}
 			else
 			{
+				logger->debug("Endpoint %d matches on security policy %s", i, security.security_policy);
 				matchedPolicyURL = true;
 			}
 			logger->debug("%d: checking user ID tokens", i);
@@ -596,13 +605,14 @@ Logger	*logger = Logger::getLogger();
 				else
 				{
 					matchedPolicyId = true;
+					logger->debug("Endpoint %d matches on policyId %s", i, security.policyId);
 				}
 				matched = true;
 			}
 		}
 		if (!matched)
 		{
-			logger->fatal("Failed to match any server endpoints");
+			logger->fatal("Failed to match any server endpoints with Security Mode '%s', Security Policy '%s', Authentication policy '%s'", securityMode(m_secMode).c_str(), m_secPolicy.c_str(), m_authPolicy.c_str());
 			if (!matchedMode)
 				logger->error("There are no endpoints that match the security mode requested");
 			if (!matchedPolicyURL)
@@ -611,6 +621,7 @@ Logger	*logger = Logger::getLogger();
 			if (!matchedPolicyId)
 				logger->error("There are no endpoints that match the Policy Id %s",
 						security.policyId);
+                        SOPC_ClientHelper_Finalize();
 			throw runtime_error("Failed to find matching endpoint in OPC/UA server");
 		}
 		else
@@ -669,11 +680,13 @@ Logger	*logger = Logger::getLogger();
 	if (m_connectionId == -1)
 	{
 		logger->fatal("Failed to create OPC/UA connection to server %s, invalid configuration detected", m_url.c_str());
+		SOPC_ClientHelper_Finalize();
 		return;
 	}
 	if (m_connectionId == -100)
 	{
 		logger->fatal("Failed to create OPC/UA connection to server %s, connection failed", m_url.c_str());
+		SOPC_ClientHelper_Finalize();
 		return;
 	}
 
@@ -867,4 +880,23 @@ void OPCUA::disconnect()
 {
 	Logger::getLogger()->info("OPCUA disconnection");
 	m_connected = false;
+}
+
+/**
+ * Return an OPCUA security mode as a string
+ */
+string OPCUA::securityMode(OpcUa_MessageSecurityMode mode)
+{
+	switch (mode)
+	{
+	case OpcUa_MessageSecurityMode_None:
+		return string("None");
+	case OpcUa_MessageSecurityMode_Sign:
+		return string("Sign");
+	case OpcUa_MessageSecurityMode_SignAndEncrypt:
+		return string("Sign & Encrypt");
+	default:
+		return string("invalid");
+	}
+
 }
