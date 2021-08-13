@@ -101,6 +101,7 @@ class OPCUA
     private:
         int         		subscribe();
 	void			browse(const std::string& nodeId, std::vector<std::string>&);
+	string			securityMode(OpcUa_MessageSecurityMode mode);
 	int32_t			m_connectionId;
 	int32_t			m_configurationId;
         std::vector<std::string>
