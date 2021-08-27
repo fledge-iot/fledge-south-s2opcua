@@ -19,8 +19,6 @@ extern "C" {
 #include "libs2opc_client_cmds.h"
 };
 
-using namespace std;
-
 class OpcUaClient;
 
 /* Lifetime Count of subscriptions */
@@ -93,15 +91,18 @@ class OPCUA
 				std::string	getBrowseName() { return m_browseName; };
 				uint32_t	getType() { return m_type; };
 				std::string	getNodeId() { return m_nodeID; };
+				OpcUa_NodeClass	getNodeClass() { return m_nodeClass; };
 		private:
 				const std::string	m_nodeID;
 				std::string		m_browseName;
 				uint32_t		m_type;
+				OpcUa_NodeClass		m_nodeClass;
 	};
     private:
         int         		subscribe();
 	void			browse(const std::string& nodeId, std::vector<std::string>&);
-	string			securityMode(OpcUa_MessageSecurityMode mode);
+	std::string		securityMode(OpcUa_MessageSecurityMode mode);
+	std::string		nodeClass(OpcUa_NodeClass nodeClass);
 	int32_t			m_connectionId;
 	int32_t			m_configurationId;
         std::vector<std::string>
