@@ -141,6 +141,10 @@ DatapointValue* dpv = NULL;
 					break;
 				}
 				case SOPC_ByteString_Id:
+					Logger::getLogger()->warn("Unable to handle ByteStrings currently");
+					break;
+				case SOPC_Null_Id:
+					Logger::getLogger()->warn("Unable to handle items with Null type");
 					break;
 				default:
 					Logger::getLogger()->warn("Unable to determine type %d", variant.BuiltInTypeId);
@@ -324,7 +328,15 @@ Logger *logger = Logger::getLogger();
 	vector<string> variables;
 	for (auto it = m_subscriptions.cbegin(); it != m_subscriptions.cend(); it++)
 	{
-		browse(*it, variables);
+		Node node(m_connectionId, *it);
+		if (node.getNodeClass() == OpcUa_NodeClass_Variable)
+		{
+			variables.push_back(*it);
+		}
+		else
+		{
+			browse(*it, variables);
+		}
 	}
 
 	if (variables.size() == 0)
@@ -808,6 +820,8 @@ SOPC_DataValue values[3];
 	{
 		SOPC_Variant variant = values[0].Value;
 		m_browseName = (char *)variant.Value.Qname->Name.Data;
+		SOPC_Variant classVariant = values[2].Value;
+		m_nodeClass = (OpcUa_NodeClass)classVariant.Value.Int32;
 	}
 	else
 	{
@@ -831,7 +845,7 @@ void OPCUA::browse(const string& nodeid, vector<string>& variables)
         SOPC_ClientHelper_BrowseResult browseResult;
 
         browseRequest.nodeId = (char *)nodeid.c_str();           // Root/Objects/
-        browseRequest.direction = OpcUa_BrowseDirection_Both; // forward
+        browseRequest.direction = OpcUa_BrowseDirection_Forward; // forward
         browseRequest.referenceTypeId = "";                      // all reference types
         browseRequest.includeSubtypes = true;
 
@@ -846,24 +860,20 @@ void OPCUA::browse(const string& nodeid, vector<string>& variables)
 	}
 	Logger::getLogger()->debug("status: %d, nbOfResults: %d", browseResult.statusCode, browseResult.nbOfReferences);
 
-	bool subscribeChild = false;
         for (int32_t i = 0; i < browseResult.nbOfReferences; i++)
         {
-		if (strcmp(browseResult.references[i].displayName, "FolderType") == 0)
-		{
-			subscribeChild = true;
-		}
-		if (strcmp(browseResult.references[i].displayName, "BaseDataVariableType") == 0)
-		{
-			variables.push_back(nodeid);
-		}
-		Logger::getLogger()->debug("Item #%d: NodeId %s, displayName %s",
-			       	i, browseResult.references[i].nodeId,
-				browseResult.references[i].displayName);
-		if (i > 0 && subscribeChild)
+		if (browseResult.references[i].nodeClass == OpcUa_NodeClass_Object)
 		{
 			browse(browseResult.references[i].nodeId, variables);
 		}
+		if (browseResult.references[i].nodeClass == OpcUa_NodeClass_Variable)
+		{
+			variables.push_back(browseResult.references[i].nodeId);
+		}
+		Logger::getLogger()->debug("Item #%d: NodeId %s, displayName %s, nodeClass %s",
+			       	i, browseResult.references[i].nodeId,
+				browseResult.references[i].displayName,
+				nodeClass(browseResult.references[i].nodeClass).c_str());
 
 		free(browseResult.references[i].nodeId);
 		free(browseResult.references[i].displayName);
@@ -900,3 +910,33 @@ string OPCUA::securityMode(OpcUa_MessageSecurityMode mode)
 	}
 
 }
+
+/**
+ * Return a string representation of a NodeClass
+ */
+string OPCUA::nodeClass(OpcUa_NodeClass nodeClass)
+{
+	switch (nodeClass)
+	{
+		case OpcUa_NodeClass_Unspecified:
+			return string("Unspecified");
+		case OpcUa_NodeClass_Object:
+			return string("Object");
+		case OpcUa_NodeClass_Variable:
+			return string("Variable");
+		case OpcUa_NodeClass_Method:
+			return string("Method");
+		case OpcUa_NodeClass_ObjectType:
+			return string("ObjectType");
+		case OpcUa_NodeClass_VariableType:
+			return string("VariableType");
+		case OpcUa_NodeClass_DataType:
+			return string("DataType");
+		case OpcUa_NodeClass_View:
+			return string("View");
+		case OpcUa_NodeClass_SizeOf:
+			return string("SizeOf");
+	}
+	return string("Unknow");
+}
+
