@@ -72,14 +72,46 @@ class OPCUA
                 }
         void        setSecMode(const std::string& secMode);
         void        setSecPolicy(const std::string& secPolicy);
-        void        setAuthPolicy(const std::string& authPolicy) { m_authPolicy = authPolicy; }
-        void        setUsername(const std::string& username) { m_username = username; }
-        void        setPassword(const std::string& password) { m_password = password; }
-        void        setCaCert(const std::string& cert) { m_certAuth = cert; }
-        void        setServerCert(const std::string& cert) { m_serverPublic = cert; }
-        void        setClientCert(const std::string& cert) { m_clientPublic = cert; }
-        void        setClientKey(const std::string& key) { m_clientPrivate = key; }
-        void        setRevocationList(const std::string& cert) { m_caCrl = cert; }
+        void        setAuthPolicy(const std::string& authPolicy)
+       			{
+				std::lock_guard<std::mutex> guard(m_configMutex);
+				m_authPolicy = authPolicy;
+			}
+        void        setUsername(const std::string& username)
+			{
+				std::lock_guard<std::mutex> guard(m_configMutex);
+				m_username = username;
+			}
+        void        setPassword(const std::string& password)
+			{
+				std::lock_guard<std::mutex> guard(m_configMutex);
+				m_password = password;
+			}
+        void        setCaCert(const std::string& cert)
+			{
+				std::lock_guard<std::mutex> guard(m_configMutex);
+				m_certAuth = cert;
+			}
+        void        setServerCert(const std::string& cert)
+			{
+				std::lock_guard<std::mutex> guard(m_configMutex);
+				m_serverPublic = cert;
+			}
+        void        setClientCert(const std::string& cert)
+			{
+				std::lock_guard<std::mutex> guard(m_configMutex);
+				m_clientPublic = cert;
+			}
+        void        setClientKey(const std::string& key)
+			{
+				std::lock_guard<std::mutex> guard(m_configMutex);
+				m_clientPrivate = key;
+			}
+        void        setRevocationList(const std::string& cert)
+			{
+				std::lock_guard<std::mutex> guard(m_configMutex);
+				m_caCrl = cert;
+			}
 	void        dataChange(const char *nodeId, const SOPC_DataValue *value);
 	void	    disconnect();
     private:

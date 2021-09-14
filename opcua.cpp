@@ -93,6 +93,7 @@ void OPCUA::dataChange(const char *nodeId, const SOPC_DataValue *value)
 {
 DatapointValue* dpv = NULL;
 
+	lock_guard<mutex> guard(m_configMutex);
 	Logger::getLogger()->debug("Data change call for node %s", nodeId);
 	if (value)
 	{
@@ -241,6 +242,7 @@ OPCUA::setReportingInterval(long value)
 void
 OPCUA::setSecMode(const std::string& secMode)
 { 
+	lock_guard<mutex> guard(m_configMutex);
 	if (secMode.compare("None") == 0)
 		m_secMode = OpcUa_MessageSecurityMode_None;
 	else if (secMode.compare("Sign") == 0)
@@ -262,6 +264,7 @@ OPCUA::setSecMode(const std::string& secMode)
 void
 OPCUA::setSecPolicy(const std::string& secPolicy)
 {
+	lock_guard<mutex> guard(m_configMutex);
 	if (!secPolicy.compare("None"))
 		m_secPolicy = SOPC_SecurityPolicy_None_URI;
 	else if (!secPolicy.compare("Basic256"))
@@ -609,7 +612,7 @@ Logger	*logger = Logger::getLogger();
 			SOPC_ClientHelper_UserIdentityToken* userIds = endpoints->endpoints[i].userIdentityTokens;
 			for (int32_t j = 0; matched == false && j < endpoints->endpoints[i].nbOfUserIdentityTokens; j++)
 			{
-				if (userIds[j].policyId && strcmp(security.policyId, userIds[j].policyId))
+				if (userIds[j].policyId && strncasecmp(security.policyId, userIds[j].policyId, strlen(security.policyId)))
 				{
 					logger->debug("%d: '%s' != '%s'", i, security.policyId, userIds[j].policyId);
 					continue;
@@ -617,6 +620,7 @@ Logger	*logger = Logger::getLogger();
 				else
 				{
 					matchedPolicyId = true;
+					security.policyId = strdup(userIds[j].policyId);
 					logger->debug("Endpoint %d matches on policyId %s", i, security.policyId);
 				}
 				matched = true;
@@ -631,8 +635,10 @@ Logger	*logger = Logger::getLogger();
 				logger->error("There are no endpoints that match the Policy URL %s",
 						security.security_policy);
 			if (!matchedPolicyId)
+			{
 				logger->error("There are no endpoints that match the Policy Id %s",
 						security.policyId);
+			}
                         SOPC_ClientHelper_Finalize();
 			throw runtime_error("Failed to find matching endpoint in OPC/UA server");
 		}
@@ -739,6 +745,7 @@ Logger	*logger = Logger::getLogger();
 void
 OPCUA::stop()
 {
+	lock_guard<mutex> guard(m_configMutex);
 	if (m_connected)
 	{
 		m_connected = false;

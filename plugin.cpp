@@ -241,8 +241,16 @@ void parse_config(OPCUA *opcua, ConfigCategory &config, bool reconf)
                 const rapidjson::Value& subs = doc["subscriptions"];
                 for (rapidjson::SizeType i = 0; i < subs.Size(); i++)
                 {
-                    Logger::getLogger()->info("%s: Adding subscription for node id %d = '%s'", reconf?"RECONF":"INIT", i, subs[i].GetString());
-                    opcua->addSubscription(subs[i].GetString());
+
+		    if (subs[i].IsString())
+		    {
+                    	Logger::getLogger()->info("%s: Adding subscription for node id %d = '%s'", reconf?"RECONF":"INIT", i, subs[i].GetString());
+                    	opcua->addSubscription(subs[i].GetString());
+		    }
+		    else
+		    {
+			Logger::getLogger()->warn("Subscription contains incorrect node id, all node ids should be expressed as JSON strings");
+		    }
                 }
             }
             else
