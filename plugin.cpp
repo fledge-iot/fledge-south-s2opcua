@@ -32,7 +32,7 @@ void parse_config(OPCUA *opcua, ConfigCategory &config, bool reconf);
 /**
  * Default configuration
  */
-const char *default_config = QUOTE({
+static const char *default_config = QUOTE({
     "plugin" : {
            "description" : "Simple OPC UA data change plugin",
             "type" : "string",
