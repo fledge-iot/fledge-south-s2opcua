@@ -13,6 +13,7 @@
 #include <reading.h>
 #include <logger.h>
 #include <mutex>
+#include <thread>
 #include <stdlib.h>
 #include <map>
 extern "C" {
@@ -30,25 +31,9 @@ class OpcUaClient;
 /* Secure Channel lifetime */
 #define SC_LIFETIME_MS 3600000
 
-/* Path to the certificate authority */
-#define PATH_CACERT_PUBL "/home/nerd039/dev/S2OPC/bin/trusted/cacert.der"
-/* Path to the CA CRL */
-#define PATH_CACRL_PUBL "/home/nerd039/dev/S2OPC/bin/revoked/cacrl.der"
-/* Path to the server certificate */
-#define PATH_SERVER_PUBL "/home/nerd039/dev/S2OPC/bin/server_public/server_2k_cert.der"
-/* Path to the client certificate */
-#define PATH_CLIENT_PUBL "/home/nerd039/dev/S2OPC/bin/client_public/client_2k_cert.der"
-/* Path to the client private key */
-#define PATH_CLIENT_PRIV "/home/nerd039/dev/S2OPC/bin/client_private/client_2k_key.pem"
-
-/*
-typedef enum {
-    SOPC_SecurityPolicy_None_URI,
-    SOPC_SecurityPolicy_Basic256_URI,
-    SOPC_SecurityPolicy_Basic256Sha256_URI
-} SOPC_SecurityPolicy_type;
-*/
-
+/**
+ * Interface to the S2 OPCUA library
+ */
 class OPCUA
 {
     public:
@@ -82,6 +67,7 @@ class OPCUA
         void        setRevocationList(const std::string& cert) { m_caCrl = cert; }
 	void        dataChange(const char *nodeId, const SOPC_DataValue *value);
 	void	    disconnect();
+	void	    retry();
     private:
 
 	class Node
@@ -141,6 +127,9 @@ class OPCUA
 	char			*m_path_cert_srv;
 	char			*m_path_cert_cli;
 	char			*m_path_key_cli;
+	bool			m_stopped;
+	std::thread		*m_background;
+	bool			m_init;
 };
 
 #endif

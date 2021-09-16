@@ -23,34 +23,6 @@ map<string, bool> subscriptionVariables;
 static OPCUA *opcua = NULL;
 
 
-// OPC-UA time (hundreds of nanosecs since 1601/01/01 00:00:00 UTC)
-// NTP time (hundreds of nanosecs since 1900/01/01 00:00:00 UTC)
-// Unix time (seconds since 1970/01/01 00:00:00 UTC)
-
-#if 0 // TODO
-unsigned long Opcua_Time_2_Unix_Time(uint64_t uts)
-{
-    /* First, subtract the difference between epochs */
-s_OPCTimeToNTP(pVal->SourceTimesta
-mp);
-        plsVal->server_timestamp = Helpers_OPCTimeToNTP(pVal->ServerTime
-stamp);
-        /* Value is ready, modify given pointer *
-/
-        *pplsVal = plsVal;
-    }
-
-    /* Partial mallocs */
- 
-   if (SOPC_STATUS_OK != status)
-    {
-        if (NULL != plsVal)
-        {
-            SOPC_Free(plsVa
-    uint64_t seconds = ((uts / 10000000) << 32);
-}
-#endif
-
 /**
  * Callback function for a disconnection deom the OPCUA server
  *
@@ -84,6 +56,14 @@ static void datachange_callback(const int32_t c_id,
 }
 
 /**
+ * The retry thread entry point
+ */
+static void retryThread(void *data)
+{
+	((OPCUA *)data)->retry();
+}
+
+/**
  * A data value we are monitoring has changed
  *
  * @param nodeId	The ID of the node that has changed
@@ -93,6 +73,11 @@ void OPCUA::dataChange(const char *nodeId, const SOPC_DataValue *value)
 {
 DatapointValue* dpv = NULL;
 
+	if (m_background && m_background->joinable())	// Collect the background thread
+	{
+		m_background->join();
+		m_background = NULL;
+	}
 	Logger::getLogger()->debug("Data change call for node %s", nodeId);
 	if (value)
 	{
@@ -199,7 +184,10 @@ OPCUA::OPCUA(const string& url) : m_url(url),
 				m_path_crl(NULL),
 				m_path_cert_srv(NULL),
 				m_path_cert_cli(NULL),
-				m_path_key_cli(NULL)
+				m_path_key_cli(NULL),
+				m_stopped(false),
+				m_background(NULL),
+				m_init(false)
 {
 	opcua = this;
 }
@@ -406,16 +394,18 @@ int n_subscriptions = 0;
 SOPC_ClientHelper_Security security;
 Logger	*logger = Logger::getLogger();
 
+	m_stopped = false;
 
-	if (SOPC_ClientHelper_Initialize("/tmp/s2opc_wrapper_subscribe_logs/",
+	if (m_init == false && SOPC_ClientHelper_Initialize("/tmp/s2opc_wrapper_subscribe_logs/",
 				SOPC_LOG_LEVEL_ERROR, disconnect_callback) != 0)
 	{
 		logger->fatal("Unable to initialise S2OPC library");
 		throw runtime_error("Unable to initialise library");
 	}
+	m_init = true;
 
 	int res;
-	SOPC_ClientHelper_GetEndpointsResult *endpoints;
+	SOPC_ClientHelper_GetEndpointsResult *endpoints = NULL;
 	if ((res = SOPC_ClientHelper_GetEndpoints(m_url.c_str(), &endpoints)) == 0)
 	{
 		logger->info("Server has %d endpoints.\n", endpoints->nbOfEndpoints);
@@ -475,103 +465,120 @@ Logger	*logger = Logger::getLogger();
 	if (data)
 		certstore = data;
 	certstore += "/etc/certs/";
-	if (m_certAuth.length())
-	{
-		string cacert = certstore + m_certAuth + ".der";
-		m_path_cert_auth = strdup(cacert.c_str());
-		security.path_cert_auth = m_path_cert_auth;
-		if (access(security.path_cert_auth, R_OK))
-		{
-			logger->error("Unable to access CA Certificate %s", security.path_cert_auth);
-			SOPC_ClientHelper_Finalize();
-			return;
-		}
-		logger->info("Using CA Cert %s", security.path_cert_auth);
-	}
-	else
+
+	if (m_secMode == OpcUa_MessageSecurityMode_None)
 	{
 		security.path_cert_auth = NULL;
-		logger->warn("No CA Cert has been configured");
-	}
-	if (m_caCrl.length())
-	{
-		string crl = certstore + m_caCrl + ".der";
-		m_path_crl = strdup(crl.c_str());
-		security.path_crl = m_path_crl;
-		if (access(security.path_crl, R_OK))
-		{
-			logger->error("Unable to access CRL Certificate %s", security.path_crl);
-			SOPC_ClientHelper_Finalize();
-			return;
-		}
-		logger->info("Using CRL Cert %s", security.path_crl);
-	}
-	else
-	{
 		security.path_crl = NULL;
-		logger->warn("No Certificate Revocation List has been configured");
-	}
-	if (m_serverPublic.length())
-	{
-		string certSrv = certstore + m_serverPublic + ".der";
-		m_path_cert_srv = strdup(certSrv.c_str());
-		security.path_cert_srv = m_path_cert_srv;
-		if (access(security.path_cert_srv, R_OK))
-		{
-			logger->error("Unable to access Server Certificate %s", security.path_cert_srv);
-			SOPC_ClientHelper_Finalize();
-			return;
-		}
-		logger->info("Using Srv Cert %s", security.path_cert_srv);
-	}
-	else
-	{
 		security.path_cert_srv = NULL;
-		logger->warn("No Server Certificate has been configured");
-	}
-	if (m_clientPublic.length())
-	{
-		string certClient = certstore + m_clientPublic + ".der";
-	       	m_path_cert_cli = strdup(certClient.c_str());
-		security.path_cert_cli = m_path_cert_cli;
-		if (access(security.path_cert_cli, R_OK))
-		{
-			logger->error("Unable to access Client Certificate %s", security.path_cert_cli);
-			SOPC_ClientHelper_Finalize();
-			return;
-		}
-		logger->info("Using Client Cert %s", security.path_cert_cli);
+		security.path_cert_cli = NULL;
+		security.path_key_cli = NULL;
 	}
 	else
 	{
-		security.path_cert_cli = NULL;
-		logger->warn("No Client Certificate has been configured");
-	}
-	if (m_clientPrivate.length())
-	{
-		string keyClient = certstore + "pem/" + m_clientPrivate + ".pem";
-		m_path_key_cli = strdup(keyClient.c_str());
-		security.path_key_cli = m_path_key_cli;
-		if (access(security.path_key_cli, R_OK) != F_OK)
+		if (m_certAuth.length())
 		{
-			// If not in pem subdirectory try without subdirectory
-			string altKeyClient = certstore + m_clientPrivate + ".pem";
-			free(m_path_key_cli);
-			m_path_key_cli = strdup(altKeyClient.c_str());
+			string cacert = certstore + m_certAuth + ".der";
+			m_path_cert_auth = strdup(cacert.c_str());
+			security.path_cert_auth = m_path_cert_auth;
+			if (access(security.path_cert_auth, R_OK))
+			{
+				logger->error("Unable to access CA Certificate %s", security.path_cert_auth);
+				SOPC_ClientHelper_Finalize();
+				m_init = false;
+				throw runtime_error("Unable to access CA Certificate");
+			}
+			logger->info("Using CA Cert %s", security.path_cert_auth);
+		}
+		else
+		{
+			security.path_cert_auth = NULL;
+			logger->warn("No CA Cert has been configured");
+		}
+		if (m_caCrl.length())
+		{
+			string crl = certstore + m_caCrl + ".der";
+			m_path_crl = strdup(crl.c_str());
+			security.path_crl = m_path_crl;
+			if (access(security.path_crl, R_OK))
+			{
+				logger->error("Unable to access CRL Certificate %s", security.path_crl);
+				SOPC_ClientHelper_Finalize();
+				m_init = false;
+				throw runtime_error("Unable to access CRL Certificate");
+			}
+			logger->info("Using CRL Cert %s", security.path_crl);
+		}
+		else
+		{
+			security.path_crl = NULL;
+			logger->warn("No Certificate Revocation List has been configured");
+		}
+		if (m_serverPublic.length())
+		{
+			string certSrv = certstore + m_serverPublic + ".der";
+			m_path_cert_srv = strdup(certSrv.c_str());
+			security.path_cert_srv = m_path_cert_srv;
+			if (access(security.path_cert_srv, R_OK))
+			{
+				logger->error("Unable to access Server Certificate %s", security.path_cert_srv);
+				SOPC_ClientHelper_Finalize();
+				m_init = false;
+				throw runtime_error("Unable to access Server Certificate");
+			}
+			logger->info("Using Srv Cert %s", security.path_cert_srv);
+		}
+		else
+		{
+			security.path_cert_srv = NULL;
+			logger->warn("No Server Certificate has been configured");
+		}
+		if (m_clientPublic.length())
+		{
+			string certClient = certstore + m_clientPublic + ".der";
+			m_path_cert_cli = strdup(certClient.c_str());
+			security.path_cert_cli = m_path_cert_cli;
+			if (access(security.path_cert_cli, R_OK))
+			{
+				logger->error("Unable to access Client Certificate %s", security.path_cert_cli);
+				SOPC_ClientHelper_Finalize();
+				m_init = false;
+				throw runtime_error("Unable to access Client Certificates");
+			}
+			logger->info("Using Client Cert %s", security.path_cert_cli);
+		}
+		else
+		{
+			security.path_cert_cli = NULL;
+			logger->warn("No Client Certificate has been configured");
+		}
+		if (m_clientPrivate.length())
+		{
+			string keyClient = certstore + "pem/" + m_clientPrivate + ".pem";
+			m_path_key_cli = strdup(keyClient.c_str());
 			security.path_key_cli = m_path_key_cli;
 			if (access(security.path_key_cli, R_OK) != F_OK)
 			{
-				logger->error("Unable to access Client key %s", security.path_key_cli);
-				SOPC_ClientHelper_Finalize();
-				return;
+				// If not in pem subdirectory try without subdirectory
+				string altKeyClient = certstore + m_clientPrivate + ".pem";
+				free(m_path_key_cli);
+				m_path_key_cli = strdup(altKeyClient.c_str());
+				security.path_key_cli = m_path_key_cli;
+				if (access(security.path_key_cli, R_OK) != F_OK)
+				{
+					logger->error("Unable to access Client key %s", security.path_key_cli);
+					SOPC_ClientHelper_Finalize();
+					m_init = false;
+					throw runtime_error("Unable to access Client key");
+				}
 			}
+			logger->info("Using Client key %s", security.path_key_cli);
 		}
-		logger->info("Using Client key %s", security.path_key_cli);
-	}
-	else
-	{
-		security.path_key_cli = NULL;
-		logger->warn("No Client Key has been configured");
+		else
+		{
+			security.path_key_cli = NULL;
+			logger->warn("No Client Key has been configured");
+		}
 	}
 
 	// Check for a matching endpoint
@@ -634,6 +641,7 @@ Logger	*logger = Logger::getLogger();
 				logger->error("There are no endpoints that match the Policy Id %s",
 						security.policyId);
                         SOPC_ClientHelper_Finalize();
+			m_init = false;
 			throw runtime_error("Failed to find matching endpoint in OPC/UA server");
 		}
 		else
@@ -685,7 +693,7 @@ Logger	*logger = Logger::getLogger();
 				logger->fatal("Invalid password %s", security.password);
 				break;
 		}
-		return;
+		throw runtime_error("Failed to create succesful S2OPCUA configuration");;
 	}
 
 	m_connectionId = SOPC_ClientHelper_CreateConnection(m_configurationId);
@@ -693,13 +701,15 @@ Logger	*logger = Logger::getLogger();
 	{
 		logger->fatal("Failed to create OPC/UA connection to server %s, invalid configuration detected", m_url.c_str());
 		SOPC_ClientHelper_Finalize();
-		return;
+		m_init = false;
+		throw runtime_error("Failed to create OPC/UA connection to server, invalid configuration detected");
 	}
 	if (m_connectionId == -100)
 	{
 		logger->fatal("Failed to create OPC/UA connection to server %s, connection failed", m_url.c_str());
 		SOPC_ClientHelper_Finalize();
-		return;
+		m_init = false;
+		throw runtime_error("Failed to create OPC/UA connection to server, connection failed");
 	}
 
 	m_connected = true;
@@ -739,6 +749,7 @@ Logger	*logger = Logger::getLogger();
 void
 OPCUA::stop()
 {
+	m_stopped = true;
 	if (m_connected)
 	{
 		m_connected = false;
@@ -746,6 +757,7 @@ OPCUA::stop()
 		SOPC_ClientHelper_Disconnect(m_connectionId);
 	}
 	SOPC_ClientHelper_Finalize();
+	m_init = false;
 	// TODO Cleanup memory
 	if (m_path_cert_auth)
 	{
@@ -890,6 +902,42 @@ void OPCUA::disconnect()
 {
 	Logger::getLogger()->info("OPCUA disconnection");
 	m_connected = false;
+	if (m_stopped == false)
+	{
+		// This was not a user initiated stop
+		if (m_background && m_background->joinable())	// Collect the background thread
+		{
+			m_background->join();
+			m_background = NULL;
+		}
+		if (m_background == NULL)
+		{
+			m_background = new thread(retryThread, this);
+		}
+
+	}
+}
+
+/**
+ * Run a background thread to rety the connection after a forced disconnect.
+ *
+ * There will be a delay between retires starting at 100ms and backing off to
+ * once a minute.
+ */
+void OPCUA::retry()
+{
+	int delay = 100;
+	while (!m_connected)
+	{
+		std::this_thread::sleep_for(std::chrono::milliseconds(delay));
+		try {
+			start();
+		} catch (...) {
+			// ignore
+		}
+		if (delay < 60 * 1000)
+			delay *= 2;
+	}
 }
 
 /**
