@@ -62,13 +62,24 @@ git clone https://gitlab.com/systerel/S2OPC.git
 	cd S2OPC
 	cp ../S2OPC.patch .
 	git apply S2OPC.patch   # apply S2OPC code changes
-	ed tests/ClientServer/unit_tests/helpers/check_logger.c << EOED
+	machine=`uname -m`
+	if [[ $machine == "arm7l" ]]; then
+		ed tests/ClientServer/unit_tests/helpers/check_logger.c << EOED
+498
+s/%z/%d/
+s/%z/%d/
+w
+q
+EOED
+	else
+		ed tests/ClientServer/unit_tests/helpers/check_logger.c << EOED
 498
 s/%z/%d/
 s/%z/%ld/
 w
 q
 EOED
+	fi
 	BUILD_SHARED_LIBS=OFF
 	CMAKE_INSTALL_PREFIX=/usr/local
 	./build.sh
