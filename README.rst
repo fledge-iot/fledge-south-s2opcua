@@ -1,9 +1,11 @@
 ========================================================================
-OPC UA C/C++ South plugin 
+OPC UA S2OPC South plugin 
 ========================================================================
 
 A simple asynchronous OPC UA plugin that registers for change events on
 OPC UA objects.
+This plugin supports several OPC UA Security Policies and Message Security Modes.
+It supports both anonymous access and authentication using username and password.
 
 NOTE:
 
@@ -19,10 +21,10 @@ asset
   An asset name prefix that is added to the OPC UA variables retrieved from the OPC UA server
 
 url
-  The URL used to connect the server, of the form opc.tcp://<hostname>:<port>/...
+  The URL used to connect the server, of the form *opc.tcp://<hostname>:<port>/...*
 
 subscribeById
-  A toggle that determines of the subscriptions are to be treated as
+  A toggle that determines if the subscriptions are to be treated as
   OPC UA node names or as browse names.
 
 subscriptions
@@ -55,7 +57,7 @@ browsing the given OPC UA server using OPC UA clients, such as UaExpert
 
 https://www.unified-automation.com/downloads/opc-ua-clients.html
 
-Most examples come from Object in ProSys OPC UA simulation server:
+Most examples come from the Simulation Object in the Prosys OPC UA Simulation Server:
 
 https://www.prosysopc.com/products/opc-ua-simulation-server/
 
@@ -99,7 +101,7 @@ Building S2OPC
 
 To build S2OPC and its dependencies:
 
-* libmbedtls-dev
+* libmbedtls-dev:
 .. code-block:: console
 
   $ sudo apt-get install -y libmbedtls-dev
@@ -129,27 +131,33 @@ To build S2OPC and its dependencies:
 
   $ rm -f CMakeCache.txt ; mkdir -p build ; cd build; cmake .. && make -j4 && sudo make install; cd -
 
-* S2OPC
+* S2OPC:
 .. code-block:: console
 
   $ cd ~/dev
-  $ git clone https://gitlab.com/systerel/S2OPC.git --branch S2OPC_Toolkit_1.1.0
+  $ git clone https://gitlab.com/systerel/S2OPC.git
   $ git clone https://github.com/fledge-iot/fledge-south-s2opcua.git
-  $ cp fledge-south-s2opcua/S2OPC.patch S2OPC/
   $ cd S2OPC
-  $ git apply S2OPC.patch   # apply S2OPC code changes
+  $ cp ./src/Common/opcua_types/sopc_encodeabletype.h ../fledge-south-s2opcua/include
+  $ Make this change in ../fledge-south-s2opcua/include/sopc_encodeabletype.h:
+      * Locate the string: *typedef const struct SOPC_EncodeableType*
+      * Change it to: *typedef struct SOPC_EncodeableType* (that is, remove the *const*)
   $ BUILD_SHARED_LIBS=OFF; CMAKE_INSTALL_PREFIX=/usr/local; ./build.sh; echo; echo "BUILD done, INSTALLING..."; echo; cd build; sudo make install; cd -
 
-Alternatively run the script requirements.sh to automate this and place a copy of the S2OPC shared library and its dependencies in /usr/local/lib.
+Alternatively run the script *fledge-south-s2opcua/requirements.sh* to automate these steps.
+This includes placing a copy of the S2OPC shared library and its dependencies in */usr/local/lib*.
 
 .. code-block:: console
 
-  $ ./requirements.sh
+  $ cd ~/dev
+  $ ./fledge-south-s2opcua/requirements.sh
+  
+Note that you should set your default directory to *~/dev* before running *requirements.sh*.
 
 Build
 -----
 
-To build the opcua plugin run the commands:
+To build the OPC UA S2OPC South plugin run the commands:
 
 .. code-block:: console
 
