@@ -8,6 +8,7 @@
  * Author: Mark Riddoch
  */
 #include <opcua.h>
+#undef QUOTE    // S2OPC Toolkit has its own definition of QUOTE which conflicts with Fledge
 #include <plugin_api.h>
 #include <stdio.h>
 #include <stdlib.h>

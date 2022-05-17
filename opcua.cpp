@@ -24,7 +24,7 @@ static OPCUA *opcua = NULL;
 
 
 /**
- * Callback function for a disconnection deom the OPCUA server
+ * Callback function for a disconnection from the OPCUA server
  *
  * @param c_id	The conenction ID
  */
@@ -39,7 +39,7 @@ static void disconnect_callback(const uint32_t c_id)
 
 /**
  * Callback function called when a change occurs in one of the nodes
- * that we have registered to receives changes.
+ * that we have registered to receive changes.
  *
  * @param c_id	The connection id
  * @param d_id	The data id of the changed node
@@ -350,7 +350,7 @@ Logger *logger = Logger::getLogger();
 			logger->error("Unable to subscribe to node %s", it->c_str());
 		}
 	}
-	res = SOPC_ClientHelper_AddMonitoredItems(m_connectionId, node_ids, variables.size());
+	res = SOPC_ClientHelper_AddMonitoredItems(m_connectionId, node_ids, variables.size(), NULL);
 	switch (res)
 	{
 	case 0:
@@ -396,8 +396,8 @@ Logger	*logger = Logger::getLogger();
 
 	m_stopped = false;
 
-	if (m_init == false && SOPC_ClientHelper_Initialize("/tmp/s2opc_wrapper_subscribe_logs/",
-				SOPC_LOG_LEVEL_ERROR, disconnect_callback) != 0)
+	if (m_init == false &&
+		(SOPC_CommonHelper_Initialize(NULL) != SOPC_STATUS_OK || SOPC_ClientHelper_Initialize(disconnect_callback) != 0))
 	{
 		logger->fatal("Unable to initialise S2OPC library");
 		throw runtime_error("Unable to initialise library");
@@ -650,7 +650,7 @@ Logger	*logger = Logger::getLogger();
 		}
 	}
 
-	m_configurationId = SOPC_ClientHelper_CreateConfiguration(m_url.c_str(), &security);
+	m_configurationId = SOPC_ClientHelper_CreateConfiguration(m_url.c_str(), &security, NULL);
 	if (m_configurationId <= 0)
 	{
 		logger->fatal("Failed to create configuration for endpoint '%s' %d", m_url.c_str(), m_configurationId);
@@ -896,7 +896,7 @@ void OPCUA::browse(const string& nodeid, vector<string>& variables)
 }
 
 /**
- * Discinnection callback has been called
+ * Disconnection callback has been called
  */
 void OPCUA::disconnect()
 {

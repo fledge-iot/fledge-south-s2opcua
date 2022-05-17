@@ -108,10 +108,19 @@ if (NOT S2OPC_CLIENTWRAPPER)
                         "Please build S2OPC library and set the environment variable S2OPC to library source tree root")
         return()
 endif()
+
+find_library(S2OPC_COMMONWRAPPER s2opc_commonwrapper ${OPCUADIR}/build/lib)
+if (NOT S2OPC_COMMONWRAPPER)
+        message(FATAL_ERROR "S2OPC library s2opc_commonwrapper not found.\n"
+                        "Please build S2OPC library and set the environment variable S2OPC to library source tree root")
+        return()
+endif()
+
 message("S2OPC_COMMON: ${S2OPC_COMMON}")
 message("S2OPC_CLIENTSERVER: ${S2OPC_CLIENTSERVER}")
 message("S2OPC_CLIENTWRAPPER: ${S2OPC_CLIENTWRAPPER}")
-target_link_libraries(${PROJECT_NAME} ${S2OPC_COMMON} ${S2OPC_CLIENTSERVER} ${S2OPC_CLIENTWRAPPER})
+message("S2OPC_COMMONWRAPPER: ${S2OPC_COMMONWRAPPER}")
+target_link_libraries(${PROJECT_NAME} ${S2OPC_COMMON} ${S2OPC_CLIENTSERVER} ${S2OPC_CLIENTWRAPPER} ${S2OPC_COMMONWRAPPER})
 
 target_compile_options(${PROJECT_NAME} PRIVATE ${S2OPC_COMPILER_FLAGS})
 target_compile_definitions(${PROJECT_NAME} PRIVATE ${S2OPC_DEFINITIONS})

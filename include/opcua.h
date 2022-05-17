@@ -17,6 +17,7 @@
 #include <stdlib.h>
 #include <map>
 extern "C" {
+#include "libs2opc_common_config.h"    
 #include "libs2opc_client_cmds.h"
 };
 
@@ -24,7 +25,7 @@ class OpcUaClient;
 
 /* Lifetime Count of subscriptions */
 #define MAX_LIFETIME_COUNT 1000
-/* Number of targetted publish token */
+/* Number of targeted publish token */
 #define PUBLISH_N_TOKEN 2
 /* Connection global timeout */
 #define TIMEOUT_MS 10000

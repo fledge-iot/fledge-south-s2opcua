@@ -19,8 +19,6 @@
 ##
 ## Author: Amandeep Singh Arora, Mark Riddoch
 ##
-
-fledge_location=`pwd`
 os_name=`(grep -o '^NAME=.*' /etc/os-release | cut -f2 -d\" | sed 's/"//g')`
 os_version=`(grep -o '^VERSION_ID=.*' /etc/os-release | cut -f2 -d\" | sed 's/"//g')`
 echo "Platform is ${os_name}, Version: ${os_version}"
@@ -48,7 +46,7 @@ wget https://github.com/libcheck/check/releases/download/0.15.2/check-0.15.2.tar
 tar xf check-0.15.2.tar.gz
 (
 	cd check-0.15.2
-	cp ../check-0.15.2_CMakeLists.txt.patch .
+	cp ../fledge-south-s2opcua/check-0.15.2_CMakeLists.txt.patch .
 	patch < check-0.15.2_CMakeLists.txt.patch  # update the CMakeLists.txt file
 	rm -f CMakeCache.txt
 	mkdir -p build
@@ -60,12 +58,9 @@ tar xf check-0.15.2.tar.gz
 git clone https://gitlab.com/systerel/S2OPC.git
 (
 	cd S2OPC
-	cp ../S2OPC.patch .
-	git apply S2OPC.patch   # apply S2OPC code changes
-	ed tests/ClientServer/unit_tests/helpers/check_logger.c << EOED
-498
-s/%z/%d/
-s/%z/%ld/
+	cp ./src/Common/opcua_types/sopc_encodeabletype.h ../fledge-south-s2opcua/include
+	ed ../fledge-south-s2opcua/include/sopc_encodeabletype.h << EOED
+,s/typedef const struct SOPC_EncodeableType/typedef struct SOPC_EncodeableType/1
 w
 q
 EOED
