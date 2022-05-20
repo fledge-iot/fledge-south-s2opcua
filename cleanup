@@ -6,7 +6,7 @@ read continue
 if [ "$continue" != 'YES' ]; then
     echo Cleanup not done
 else
-    rm -rf check-0.15.2 && rm check-0.15.2.tar.gz* && rm -rf S2OPC && rm -rf libexpat
+    rm -rf check-0.15.2 && rm -rf check-0.15.2.tar.gz* && rm -rf S2OPC && rm -rf libexpat && rm -rf include/sopc_encodeabletype.h
     echo Cleanup completed
 fi
 
