@@ -58,6 +58,8 @@ tar xf check-0.15.2.tar.gz
 git clone https://gitlab.com/systerel/S2OPC.git
 (
 	cd S2OPC
+	cp ../S2OPC.patch .
+	git apply S2OPC.patch
 	cp ./src/Common/opcua_types/sopc_encodeabletype.h ../include
 	ed ../include/sopc_encodeabletype.h << EOED
 ,s/typedef const struct SOPC_EncodeableType/typedef struct SOPC_EncodeableType/1

@@ -138,6 +138,8 @@ To build S2OPC and its dependencies:
   $ git clone https://gitlab.com/systerel/S2OPC.git
   $ git clone https://github.com/fledge-iot/fledge-south-s2opcua.git
   $ cd S2OPC
+  $ cp ../fledge-south-s2opcua/S2OPC.patch .
+  $ git apply S2OPC.patch
   $ cp ./src/Common/opcua_types/sopc_encodeabletype.h ../fledge-south-s2opcua/include
   $ Make this change in ../fledge-south-s2opcua/include/sopc_encodeabletype.h:
       * Locate the string: *typedef const struct SOPC_EncodeableType*
@@ -149,10 +151,12 @@ This includes placing a copy of the S2OPC shared library and its dependencies in
 
 .. code-block:: console
 
-  $ cd ~/dev
-  $ ./fledge-south-s2opcua/requirements.sh
+  $ cd ~/dev/fledge-south-s2opcua
+  $ ./requirements.sh
   
-Note that you should set your default directory to *~/dev* before running *requirements.sh*.
+Note that you should set your default directory to your *fledge-south-s2opcua* directory before running *requirements.sh*.
+This script will create *libexpat*, *check-0.15.2* and *S2OPC* as sub-directories of *fledge-south-s2opcua*.
+This is different from the manual procedure above but will still result in the *S2OPC* libraries being placed in */usr/local/lib*.
 
 Build
 -----
