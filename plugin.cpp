@@ -70,19 +70,19 @@ static const char *default_config = QUOTE({
             "order" : "5"
             },
     "securityMode" : {
-            "description" : "Security mode to use while connecting to OPCUA server" ,
+            "description" : "Security Mode to use while connecting to OPCUA server" ,
             "type" : "enumeration",
             "options":["None", "Sign", "SignAndEncrypt"],
             "default" : "None",
-            "displayName" : "Security mode",
+            "displayName" : "Security Mode",
             "order" : "6"
             },
     "securityPolicy" : {
-            "description" : "Security policy to use while connecting to OPCUA server" ,
+            "description" : "Security Policy to use while connecting to OPCUA server" ,
             "type" : "enumeration",
             "options":["None", "Basic256", "Basic256Sha256"],
             "default" : "None",
-            "displayName" : "Security policy",
+            "displayName" : "Security Policy",
             "order" : "7",
             "validity": " securityMode == \"Sign\" || securityMode == \"SignAndEncrypt\" "
             },
@@ -91,7 +91,7 @@ static const char *default_config = QUOTE({
             "type" : "enumeration",
             "options":["anonymous", "username"],
             "default" : "anonymous",
-            "displayName" : "User authentication policy",
+            "displayName" : "User Authentication Policy",
             "order" : "8"
             },
     "username" : {
@@ -111,10 +111,10 @@ static const char *default_config = QUOTE({
             "validity": " userAuthPolicy == \"username\" "
             },
     "caCert" : {
-            "description" : "CA certificate authority file in DER format" ,
+            "description" : "Certificate Authority file in DER format" ,
             "type" : "string",
             "default" : "",
-            "displayName" : "CA certificate authority",
+            "displayName" : "CA Certificate Authority",
             "order" : "11",
             "validity": " securityMode == \"Sign\" || securityMode == \"SignAndEncrypt\" "
             },
@@ -122,7 +122,7 @@ static const char *default_config = QUOTE({
             "description" : "Server certificate in the DER format" ,
             "type" : "string",
             "default" : "",
-            "displayName" : "Server public key",
+            "displayName" : "Server Public Key",
             "order" : "12",
             "validity": " securityMode == \"Sign\" || securityMode == \"SignAndEncrypt\" "
             },
@@ -130,15 +130,15 @@ static const char *default_config = QUOTE({
             "description" : "Client public key file in DER format" ,
             "type" : "string",
             "default" : "",
-            "displayName" : "Client public key",
+            "displayName" : "Client Public Key",
             "order" : "13",
             "validity": " securityMode == \"Sign\" || securityMode == \"SignAndEncrypt\" "
             },
     "clientKey" : {
-            "description" : "Client private key file in DER format" ,
+            "description" : "Client private key file in PEM format" ,
             "type" : "string",
             "default" : "",
-            "displayName" : "Client private key",
+            "displayName" : "Client Private Key",
             "order" : "14",
             "validity": " securityMode == \"Sign\" || securityMode == \"SignAndEncrypt\" "
             },
@@ -146,9 +146,16 @@ static const char *default_config = QUOTE({
             "description" : "Certificate Revocation List in DER format" ,
             "type" : "string",
             "default" : "",
-            "displayName" : "Certificate revocation list",
+            "displayName" : "Certificate Revocation List",
             "order" : "15",
             "validity": " securityMode == \"Sign\" || securityMode == \"SignAndEncrypt\" "
+            },
+    "traceFile" : {
+            "description" : "Enable trace file for debugging" ,
+            "type" : "boolean",
+            "default" : "false",
+            "displayName" : "Debug Trace File",
+            "order" : "16"
             }
     });
 
@@ -259,9 +266,10 @@ void parse_config(OPCUA *opcua, ConfigCategory &config, bool reconf)
         opcua->setSecMode(config.getValue("securityMode"));
     }
 
+    std::string secPolicy;
     if (config.itemExists("securityPolicy"))
     {
-        std::string secPolicy = config.getValue("securityPolicy");
+        secPolicy = config.getValue("securityPolicy");
         if(secPolicy.compare("None")==0 || secPolicy.compare("Basic256")==0 || secPolicy.compare("Basic256Sha256")==0)
             opcua->setSecPolicy(secPolicy);
         else
@@ -270,7 +278,27 @@ void parse_config(OPCUA *opcua, ConfigCategory &config, bool reconf)
 
     if (config.itemExists("userAuthPolicy"))
     {
-        opcua->setAuthPolicy(config.getValue("userAuthPolicy"));
+        std::string authPolicy = config.getValue("userAuthPolicy");
+
+        if (authPolicy.compare("username") == 0)
+        {
+            if (secPolicy.find("256") != std::string::npos)
+            {
+                opcua->setAuthPolicy("username_basic256");
+            }
+            else if (secPolicy.find("128") != std::string::npos)
+            {
+                opcua->setAuthPolicy("username_basic128");
+            }
+            else
+            {
+                opcua->setAuthPolicy(authPolicy);
+            }
+        }
+        else
+        {
+            opcua->setAuthPolicy(authPolicy);
+        }
     }
 
     if (config.itemExists("username"))
@@ -306,6 +334,11 @@ void parse_config(OPCUA *opcua, ConfigCategory &config, bool reconf)
     if (config.itemExists("caCrl"))
     {
         opcua->setRevocationList(config.getValue("caCrl"));
+    }
+
+    if (config.itemExists("traceFile"))
+    {
+        opcua->setTraceFile(config.getValue("traceFile"));
     }
 }
 

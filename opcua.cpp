@@ -187,7 +187,8 @@ OPCUA::OPCUA(const string& url) : m_url(url),
 				m_path_key_cli(NULL),
 				m_stopped(false),
 				m_background(NULL),
-				m_init(false)
+				m_init(false),
+				m_traceFile(NULL)
 {
 	opcua = this;
 }
@@ -260,6 +261,26 @@ OPCUA::setSecPolicy(const std::string& secPolicy)
 	{
 		m_secPolicy = SOPC_SecurityPolicy_None_URI;
 		Logger::getLogger()->error("Invalid Security policy '%s'", secPolicy.c_str());
+	}
+}
+
+/**
+ * Set the message security mode
+ *
+ * @param value    If true, create an S2OPC OPCUA Toolkit trace file
+ */
+void
+OPCUA::setTraceFile(const std::string& traceFile)
+{
+	if (traceFile == "True" || traceFile == "true" || traceFile == "TRUE")
+	{
+		string traceFilePath = getDataDir() + string("/logs/");
+		m_traceFile = (char *) malloc(1 + traceFilePath.length());
+		strncpy(m_traceFile, traceFilePath.c_str(), traceFilePath.length());
+	}
+	else
+	{
+		m_traceFile = NULL;
 	}
 }
 
@@ -396,12 +417,29 @@ Logger	*logger = Logger::getLogger();
 
 	m_stopped = false;
 
-	if (m_init == false &&
-		(SOPC_CommonHelper_Initialize(NULL) != SOPC_STATUS_OK || SOPC_ClientHelper_Initialize(disconnect_callback) != 0))
+	if (m_init == false)
 	{
-		logger->fatal("Unable to initialise S2OPC library");
-		throw runtime_error("Unable to initialise library");
+		SOPC_Log_Configuration logConfig = SOPC_Common_GetDefaultLogConfiguration();
+		if (m_traceFile)
+		{
+			logConfig.logSysConfig.fileSystemLogConfig.logDirPath = m_traceFile;
+			logConfig.logLevel = SOPC_LOG_LEVEL_DEBUG;
+		}
+
+		SOPC_ReturnStatus initStatus = SOPC_CommonHelper_Initialize(&logConfig);
+		if (initStatus != SOPC_STATUS_OK)
+		{
+			logger->fatal("Unable to initialise S2OPC CommonHelper library: %d", (int) initStatus);
+			throw runtime_error("Unable to initialise CommonHelper library");
+		}
+
+		if (SOPC_ClientHelper_Initialize(disconnect_callback) != 0)
+		{
+			logger->fatal("Unable to initialise S2OPC ClientHelper library");
+			throw runtime_error("Unable to initialise ClientHelper library");
+		}
 	}
+
 	m_init = true;
 
 	int res;
@@ -485,6 +523,7 @@ Logger	*logger = Logger::getLogger();
 			{
 				logger->error("Unable to access CA Certificate %s", security.path_cert_auth);
 				SOPC_ClientHelper_Finalize();
+				SOPC_CommonHelper_Clear();
 				m_init = false;
 				throw runtime_error("Unable to access CA Certificate");
 			}
@@ -504,6 +543,7 @@ Logger	*logger = Logger::getLogger();
 			{
 				logger->error("Unable to access CRL Certificate %s", security.path_crl);
 				SOPC_ClientHelper_Finalize();
+				SOPC_CommonHelper_Clear();
 				m_init = false;
 				throw runtime_error("Unable to access CRL Certificate");
 			}
@@ -523,6 +563,7 @@ Logger	*logger = Logger::getLogger();
 			{
 				logger->error("Unable to access Server Certificate %s", security.path_cert_srv);
 				SOPC_ClientHelper_Finalize();
+				SOPC_CommonHelper_Clear();
 				m_init = false;
 				throw runtime_error("Unable to access Server Certificate");
 			}
@@ -542,6 +583,7 @@ Logger	*logger = Logger::getLogger();
 			{
 				logger->error("Unable to access Client Certificate %s", security.path_cert_cli);
 				SOPC_ClientHelper_Finalize();
+				SOPC_CommonHelper_Clear();
 				m_init = false;
 				throw runtime_error("Unable to access Client Certificates");
 			}
@@ -568,6 +610,7 @@ Logger	*logger = Logger::getLogger();
 				{
 					logger->error("Unable to access Client key %s", security.path_key_cli);
 					SOPC_ClientHelper_Finalize();
+					SOPC_CommonHelper_Clear();
 					m_init = false;
 					throw runtime_error("Unable to access Client key");
 				}
@@ -640,13 +683,15 @@ Logger	*logger = Logger::getLogger();
 			if (!matchedPolicyId)
 				logger->error("There are no endpoints that match the Policy Id %s",
 						security.policyId);
-                        SOPC_ClientHelper_Finalize();
+            SOPC_ClientHelper_Finalize();
+			SOPC_CommonHelper_Clear();
 			m_init = false;
 			throw runtime_error("Failed to find matching endpoint in OPC/UA server");
 		}
 		else
 		{
-			logger->info("At least one Endpoint matched with OPCUA server");
+			logger->info("Matched Endpoint: Security Mode '%s', Security Policy '%s', Authentication policy '%s'",
+				securityMode(m_secMode).c_str(), m_secPolicy.c_str(), m_authPolicy.c_str());
 		}
 	}
 
@@ -693,7 +738,7 @@ Logger	*logger = Logger::getLogger();
 				logger->fatal("Invalid password %s", security.password);
 				break;
 		}
-		throw runtime_error("Failed to create succesful S2OPCUA configuration");;
+		throw runtime_error("Failed to create successful S2OPCUA configuration");;
 	}
 
 	m_connectionId = SOPC_ClientHelper_CreateConnection(m_configurationId);
@@ -701,6 +746,7 @@ Logger	*logger = Logger::getLogger();
 	{
 		logger->fatal("Failed to create OPC/UA connection to server %s, invalid configuration detected", m_url.c_str());
 		SOPC_ClientHelper_Finalize();
+		SOPC_CommonHelper_Clear();
 		m_init = false;
 		throw runtime_error("Failed to create OPC/UA connection to server, invalid configuration detected");
 	}
@@ -708,6 +754,7 @@ Logger	*logger = Logger::getLogger();
 	{
 		logger->fatal("Failed to create OPC/UA connection to server %s, connection failed", m_url.c_str());
 		SOPC_ClientHelper_Finalize();
+		SOPC_CommonHelper_Clear();
 		m_init = false;
 		throw runtime_error("Failed to create OPC/UA connection to server, connection failed");
 	}
@@ -757,6 +804,7 @@ OPCUA::stop()
 		SOPC_ClientHelper_Disconnect(m_connectionId);
 	}
 	SOPC_ClientHelper_Finalize();
+	SOPC_CommonHelper_Clear();
 	m_init = false;
 	// TODO Cleanup memory
 	if (m_path_cert_auth)
@@ -788,6 +836,11 @@ OPCUA::stop()
 	{
 		free(m_path_key_cli);
 		m_path_key_cli = NULL;
+	}
+	if (m_traceFile)
+	{
+		free(m_traceFile);
+		m_traceFile = NULL;
 	}
 }
 
