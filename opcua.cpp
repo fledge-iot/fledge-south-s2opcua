@@ -265,7 +265,7 @@ OPCUA::setSecPolicy(const std::string& secPolicy)
 }
 
 /**
- * Set the message security mode
+ * Create an S2OPC OPCUA Toolkit trace file name if requested
  *
  * @param value    If true, create an S2OPC OPCUA Toolkit trace file
  */
@@ -275,8 +275,10 @@ OPCUA::setTraceFile(const std::string& traceFile)
 	if (traceFile == "True" || traceFile == "true" || traceFile == "TRUE")
 	{
 		string traceFilePath = getDataDir() + string("/logs/");
-		m_traceFile = (char *) malloc(1 + traceFilePath.length());
-		strncpy(m_traceFile, traceFilePath.c_str(), traceFilePath.length());
+		size_t len = traceFilePath.length();
+		m_traceFile = (char *) malloc(1 + len);
+		strncpy(m_traceFile, traceFilePath.c_str(), len);
+		m_traceFile[len] = '\0';
 	}
 	else
 	{
@@ -423,7 +425,13 @@ Logger	*logger = Logger::getLogger();
 		if (m_traceFile)
 		{
 			logConfig.logSysConfig.fileSystemLogConfig.logDirPath = m_traceFile;
+			logConfig.logSystem = SOPC_LOG_SYSTEM_FILE;
 			logConfig.logLevel = SOPC_LOG_LEVEL_DEBUG;
+		}
+		else
+		{
+			logConfig.logSysConfig.fileSystemLogConfig.logDirPath = NULL;
+			logConfig.logSystem = SOPC_LOG_SYSTEM_NO_LOG;
 		}
 
 		SOPC_ReturnStatus initStatus = SOPC_CommonHelper_Initialize(&logConfig);
@@ -760,6 +768,8 @@ Logger	*logger = Logger::getLogger();
 	}
 
 	m_connected = true;
+	logger->info("Successfully connected to OPC/UA Server: %s", m_url.c_str());
+
 	if (endpoints)
 	{
 		if (endpoints->endpoints)
