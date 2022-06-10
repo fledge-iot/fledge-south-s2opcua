@@ -119,18 +119,18 @@ static const char *default_config = QUOTE({
             "validity": " securityMode == \"Sign\" || securityMode == \"SignAndEncrypt\" "
             },
     "serverCert" : {
-            "description" : "Server certificate in the DER format" ,
+            "description" : "Server certificate file in DER format" ,
             "type" : "string",
             "default" : "",
-            "displayName" : "Server Public Key",
+            "displayName" : "Server Public Certificate",
             "order" : "12",
             "validity": " securityMode == \"Sign\" || securityMode == \"SignAndEncrypt\" "
             },
     "clientCert" : {
-            "description" : "Client public key file in DER format" ,
+            "description" : "Client certificate file in DER format" ,
             "type" : "string",
             "default" : "",
-            "displayName" : "Client Public Key",
+            "displayName" : "Client Public Certificate",
             "order" : "13",
             "validity": " securityMode == \"Sign\" || securityMode == \"SignAndEncrypt\" "
             },
@@ -143,7 +143,7 @@ static const char *default_config = QUOTE({
             "validity": " securityMode == \"Sign\" || securityMode == \"SignAndEncrypt\" "
             },
     "caCrl" : {
-            "description" : "Certificate Revocation List in DER format" ,
+            "description" : "Certificate Revocation List file in DER format" ,
             "type" : "string",
             "default" : "",
             "displayName" : "Certificate Revocation List",
