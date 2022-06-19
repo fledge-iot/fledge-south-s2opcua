@@ -64,6 +64,37 @@ static void retryThread(void *data)
 }
 
 /**
+ * Convert the user authentication Policy Id to OpcUa_UserTokenType
+ *
+ * @param policyId	PolicyId string: anonymous or username
+ */
+static OpcUa_UserTokenType PolicyIdToUserTokenType(const char *policyId)
+{
+	if (policyId && strlen(policyId))
+	{
+		char anonymous[] ="anonymous";
+		char username[] ="username";
+
+		if (!strncmp(policyId, anonymous, strlen(anonymous)))
+		{
+			return OpcUa_UserTokenType_Anonymous;
+		}
+		else if (!strncmp(policyId, username, strlen(username)))
+		{
+			return OpcUa_UserTokenType_UserName;
+		}
+		else
+		{
+			return OpcUa_UserTokenType_SizeOf; // use this token type as an error condition
+		}
+	}
+	else
+	{
+		return OpcUa_UserTokenType_SizeOf; // use this token type as an error condition
+	}
+}
+
+/**
  * A data value we are monitoring has changed
  *
  * @param nodeId	The ID of the node that has changed
@@ -488,7 +519,7 @@ Logger	*logger = Logger::getLogger();
 		security.security_policy = SOPC_SecurityPolicy_None_URI;
 	}
 	security.policyId = m_authPolicy.c_str();
-	if (!strcmp(security.policyId, "anonymous"))
+	if (PolicyIdToUserTokenType(security.policyId) == OpcUa_UserTokenType_Anonymous)
 	{
 		logger->info("Using anonymous authentication policy");
 		security.username = NULL;
@@ -664,25 +695,46 @@ Logger	*logger = Logger::getLogger();
 				matchedPolicyURL = true;
 			}
 			logger->debug("%d: checking user ID tokens", i);
-			SOPC_ClientHelper_UserIdentityToken* userIds = endpoints->endpoints[i].userIdentityTokens;
-			for (int32_t j = 0; matched == false && j < endpoints->endpoints[i].nbOfUserIdentityTokens; j++)
+			if (matchedMode && matchedPolicyURL)
 			{
-				if (userIds[j].policyId && strcmp(security.policyId, userIds[j].policyId))
+				SOPC_ClientHelper_UserIdentityToken* userIds = endpoints->endpoints[i].userIdentityTokens;
+				for (int32_t j = 0; matched == false && j < endpoints->endpoints[i].nbOfUserIdentityTokens; j++)
 				{
-					logger->debug("%d: '%s' != '%s'", i, security.policyId, userIds[j].policyId);
-					continue;
+					OpcUa_UserTokenType tokenType = PolicyIdToUserTokenType(security.policyId);
+
+					if (userIds[j].tokenType == tokenType &&
+						userIds[j].securityPolicyUri &&
+						!strcmp(userIds[j].securityPolicyUri, security.security_policy))
+					{
+						matchedPolicyId = true;
+					}
+					else if (userIds[j].tokenType == tokenType && tokenType == OpcUa_UserTokenType_Anonymous)
+					{
+						matchedPolicyId = true;
+					}
+					else
+					{
+						matchedPolicyId = false;
+					}
+
+					if (matchedPolicyId)
+					{
+						security.policyId = userIds[j].policyId; // Policy Id must match the OPC UA server's name for it
+						logger->debug("Endpoint %d matches on policyId %s (%d)", i, security.policyId, (int) userIds[j].tokenType);
+						matched = true;
+					}
+					else
+					{
+						logger->debug("%d: '%s' != '%s' (%d)", i, security.policyId, userIds[j].policyId, (int) userIds[j].tokenType);
+						continue;
+					}
 				}
-				else
-				{
-					matchedPolicyId = true;
-					logger->debug("Endpoint %d matches on policyId %s", i, security.policyId);
-				}
-				matched = true;
 			}
 		}
 		if (!matched)
 		{
-			logger->fatal("Failed to match any server endpoints with Security Mode '%s', Security Policy '%s', Authentication policy '%s'", securityMode(m_secMode).c_str(), m_secPolicy.c_str(), m_authPolicy.c_str());
+			logger->fatal("Failed to match any server endpoints with Security Mode '%s', Security Policy '%s', Authentication policy '%s'",
+				securityMode(m_secMode).c_str(), security.security_policy, m_authPolicy.c_str());
 			if (!matchedMode)
 				logger->error("There are no endpoints that match the security mode requested");
 			if (!matchedPolicyURL)
@@ -699,7 +751,7 @@ Logger	*logger = Logger::getLogger();
 		else
 		{
 			logger->info("Matched Endpoint: Security Mode '%s', Security Policy '%s', Authentication policy '%s'",
-				securityMode(m_secMode).c_str(), m_secPolicy.c_str(), m_authPolicy.c_str());
+				securityMode(security.security_mode).c_str(), security.security_policy, security.policyId);
 		}
 	}
 

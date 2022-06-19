@@ -201,7 +201,7 @@ string    url;
     }
     else
     {
-        Logger::getLogger()->fatal("UPC UA plugin is missing a URL");
+        Logger::getLogger()->fatal("OPC UA plugin is missing a URL");
         throw exception();
     }
     parse_config(opcua, *config, false);
@@ -255,7 +255,7 @@ void parse_config(OPCUA *opcua, ConfigCategory &config, bool reconf)
             }
             else
             {
-                Logger::getLogger()->fatal("UPC UA plugin is missing a subscriptions array");
+                Logger::getLogger()->fatal("OPC UA plugin is missing a subscriptions array");
                 throw exception();
             }
         }
@@ -279,26 +279,7 @@ void parse_config(OPCUA *opcua, ConfigCategory &config, bool reconf)
     if (config.itemExists("userAuthPolicy"))
     {
         std::string authPolicy = config.getValue("userAuthPolicy");
-
-        if (authPolicy.compare("username") == 0)
-        {
-            if (secPolicy.find("256") != std::string::npos)
-            {
-                opcua->setAuthPolicy("username_basic256");
-            }
-            else if (secPolicy.find("128") != std::string::npos)
-            {
-                opcua->setAuthPolicy("username_basic128");
-            }
-            else
-            {
-                opcua->setAuthPolicy(authPolicy);
-            }
-        }
-        else
-        {
-            opcua->setAuthPolicy(authPolicy);
-        }
+        opcua->setAuthPolicy(authPolicy);
     }
 
     if (config.itemExists("username"))
@@ -374,7 +355,7 @@ Reading plugin_poll(PLUGIN_HANDLE *handle)
 {
 OPCUA *opcua = (OPCUA *)handle;
 
-    throw runtime_error("OPCUA is an async plugin, poll should not be called");
+    throw runtime_error("OPC UA is an async plugin, poll should not be called");
 }
 
 /**
@@ -388,9 +369,9 @@ OPCUA        *opcua = (OPCUA *)*handle;
 
     opcua->stop();
     parse_config(opcua, config, true);
-    Logger::getLogger()->info("UPC UA plugin restart in progress...");
+    Logger::getLogger()->info("OPC UA plugin restart in progress...");
     opcua->start();
-    Logger::getLogger()->info("UPC UA plugin restarted after reconfigure");
+    Logger::getLogger()->info("OPC UA plugin restarted after reconfigure");
 }
 
 /**
