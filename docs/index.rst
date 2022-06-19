@@ -80,10 +80,12 @@ The configuration parameters that can be set on this page are;
 
   - **Certificate Revocation List**: The name of the certificate authority's Certificate Revocation List. This is a DER format certificate. If using self-signed certificates this should be left blank.
 
+  - **Debug Trace File**: Enable the S2OPCUA OPCUA Toolkit trace file for debugging. If enabled, log files will appear in the directory */usr/local/fledge/data/logs*.
+
 Subscriptions
 -------------
 
-Subscriptions to OPC/UA objects are stored as a JSON object that contents an array named "subscriptions". This  array is a set of OPC/UA nodes that will control the subscription to variables in the OPC/UA server. Each element in the array is an OPC/UA node id, if that node is is the id of a variable then that single variable will be added to the subscription list. If the node id is not a visible, then the plugin will recurse down the object tree below that node and add every variable in finds in this tree to the subscription list.
+Subscriptions to OPC/UA objects are stored as a JSON object that contents an array named "subscriptions." This  array is a set of OPC/UA nodes that will control the subscription to variables in the OPC/UA server. Each element in the array is an OPC/UA node id, if that node is is the id of a variable then that single variable will be added to the subscription list. If the node id is not a visible, then the plugin will recurse down the object tree below that node and add every variable in finds in this tree to the subscription list.
 
 A subscription list which gives the root node of the OPC/UA server will cause all variables within the server to be added to the subscription list. Care however should be taken as this may be a large number of assets.
 
@@ -137,6 +139,27 @@ Typically the Certificate Authorities certificate is retrieved and uploaded to t
 `OpenSSL <https://www.openssl.org>`_ may be used to generate and convert the keys and certificates required.
 An |generate_certs| to do this is available as part of the underlying |S2OPCUA| library.
 
+Certificate Requirements
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+Certificates must be X509 Version 3 certificates and must have the following field values:
+
+.. list-table::
+   :header-rows: 1
+
+   * - Certificate Field
+     - Value
+   * - Version
+     - V3
+   * - Subject
+     - This field must include a Common Name (*CN=*) which is a human-readable name such as *S2OPCUA South Plugin*. Do not use your device hostname.
+   * - Subject Alternative Name
+     - URI= fledge:south:s2opcua, DNS= *deviceHostname*
+   * - Key Usage
+     - Digital Signature, Key Encipherment, Non Repudiation, Data Encipherment
+   * - Extended Key Usage
+     - Client Authentication
+
 Self-Signed Certificates
 ------------------------
 
@@ -174,8 +197,8 @@ We recommend:
 * Locality: Menlo Park
 * Organization: Dianomic
 
-Subject Alternative Names
-#########################
+Subject Alternative Name
+########################
 
 Set the drop-down to *DNS*.
 Enter the hostname of your Fledge device.
