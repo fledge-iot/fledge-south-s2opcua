@@ -882,6 +882,11 @@ void OPCUA::browse(const string& nodeid, vector<string>& variables)
 	}
 	Logger::getLogger()->debug("status: %d, nbOfResults: %d", browseResult.statusCode, browseResult.nbOfReferences);
 
+	if (browseResult.nbOfReferences == 0)
+	{
+		Logger::getLogger()->error("Unable to locate the OPCUA node '%s'", nodeid.c_str());
+	}
+
         for (int32_t i = 0; i < browseResult.nbOfReferences; i++)
         {
 		if (browseResult.references[i].nodeClass == OpcUa_NodeClass_Object)
