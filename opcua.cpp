@@ -946,7 +946,8 @@ SOPC_DataValue values[3];
 	if ((res = SOPC_ClientHelper_Read(conn, readValue, 3, values)) == 0)
 	{
 		SOPC_Variant variant = values[0].Value;
-		m_browseName = (char *)variant.Value.Qname->Name.Data;
+		if (variant.Value.Qname)
+			m_browseName = (char *)variant.Value.Qname->Name.Data;
 		SOPC_Variant classVariant = values[2].Value;
 		m_nodeClass = (OpcUa_NodeClass)classVariant.Value.Int32;
 	}
@@ -986,6 +987,11 @@ void OPCUA::browse(const string& nodeid, vector<string>& variables)
 		return;
 	}
 	Logger::getLogger()->debug("status: %d, nbOfResults: %d", browseResult.statusCode, browseResult.nbOfReferences);
+
+	if (browseResult.nbOfReferences == 0)
+	{
+		Logger::getLogger()->error("Unable to locate the OPCUA node '%s'", nodeid.c_str());
+	}
 
         for (int32_t i = 0; i < browseResult.nbOfReferences; i++)
         {
