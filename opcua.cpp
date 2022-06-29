@@ -298,7 +298,7 @@ OPCUA::setSecPolicy(const std::string& secPolicy)
 /**
  * Create an S2OPC OPCUA Toolkit trace file name if requested
  *
- * @param value    If true, create an S2OPC OPCUA Toolkit trace file
+ * @param traceFile    If true, create an S2OPC OPCUA Toolkit trace file
  */
 void
 OPCUA::setTraceFile(const std::string& traceFile)
