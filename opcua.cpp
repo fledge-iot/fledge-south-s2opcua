@@ -64,6 +64,37 @@ static void retryThread(void *data)
 }
 
 /**
+ * Convert the user authentication Policy Id to OpcUa_UserTokenType
+ *
+ * @param policyId	PolicyId string: anonymous or username
+ */
+static OpcUa_UserTokenType PolicyIdToUserTokenType(const char *policyId)
+{
+	if (policyId && strlen(policyId))
+	{
+		char anonymous[] ="anonymous";
+		char username[] ="username";
+
+		if (!strncmp(policyId, anonymous, strlen(anonymous)))
+		{
+			return OpcUa_UserTokenType_Anonymous;
+		}
+		else if (!strncmp(policyId, username, strlen(username)))
+		{
+			return OpcUa_UserTokenType_UserName;
+		}
+		else
+		{
+			return OpcUa_UserTokenType_SizeOf; // use this token type as an error condition
+		}
+	}
+	else
+	{
+		return OpcUa_UserTokenType_SizeOf; // use this token type as an error condition
+	}
+}
+
+/**
  * A data value we are monitoring has changed
  *
  * @param nodeId	The ID of the node that has changed
@@ -187,7 +218,8 @@ OPCUA::OPCUA(const string& url) : m_url(url),
 				m_path_key_cli(NULL),
 				m_stopped(false),
 				m_background(NULL),
-				m_init(false)
+				m_init(false),
+				m_traceFile(NULL)
 {
 	opcua = this;
 }
@@ -260,6 +292,28 @@ OPCUA::setSecPolicy(const std::string& secPolicy)
 	{
 		m_secPolicy = SOPC_SecurityPolicy_None_URI;
 		Logger::getLogger()->error("Invalid Security policy '%s'", secPolicy.c_str());
+	}
+}
+
+/**
+ * Create an S2OPC OPCUA Toolkit trace file name if requested
+ *
+ * @param traceFile    If true, create an S2OPC OPCUA Toolkit trace file
+ */
+void
+OPCUA::setTraceFile(const std::string& traceFile)
+{
+	if (traceFile == "True" || traceFile == "true" || traceFile == "TRUE")
+	{
+		string traceFilePath = getDataDir() + string("/logs/");
+		size_t len = traceFilePath.length();
+		m_traceFile = (char *) malloc(1 + len);
+		strncpy(m_traceFile, traceFilePath.c_str(), len);
+		m_traceFile[len] = '\0';
+	}
+	else
+	{
+		m_traceFile = NULL;
 	}
 }
 
@@ -396,12 +450,35 @@ Logger	*logger = Logger::getLogger();
 
 	m_stopped = false;
 
-	if (m_init == false &&
-		(SOPC_CommonHelper_Initialize(NULL) != SOPC_STATUS_OK || SOPC_ClientHelper_Initialize(disconnect_callback) != 0))
+	if (m_init == false)
 	{
-		logger->fatal("Unable to initialise S2OPC library");
-		throw runtime_error("Unable to initialise library");
+		SOPC_Log_Configuration logConfig = SOPC_Common_GetDefaultLogConfiguration();
+		if (m_traceFile)
+		{
+			logConfig.logSysConfig.fileSystemLogConfig.logDirPath = m_traceFile;
+			logConfig.logSystem = SOPC_LOG_SYSTEM_FILE;
+			logConfig.logLevel = SOPC_LOG_LEVEL_DEBUG;
+		}
+		else
+		{
+			logConfig.logSysConfig.fileSystemLogConfig.logDirPath = NULL;
+			logConfig.logSystem = SOPC_LOG_SYSTEM_NO_LOG;
+		}
+
+		SOPC_ReturnStatus initStatus = SOPC_CommonHelper_Initialize(&logConfig);
+		if (initStatus != SOPC_STATUS_OK)
+		{
+			logger->fatal("Unable to initialise S2OPC CommonHelper library: %d", (int) initStatus);
+			throw runtime_error("Unable to initialise CommonHelper library");
+		}
+
+		if (SOPC_ClientHelper_Initialize(disconnect_callback) != 0)
+		{
+			logger->fatal("Unable to initialise S2OPC ClientHelper library");
+			throw runtime_error("Unable to initialise ClientHelper library");
+		}
 	}
+
 	m_init = true;
 
 	int res;
@@ -442,7 +519,7 @@ Logger	*logger = Logger::getLogger();
 		security.security_policy = SOPC_SecurityPolicy_None_URI;
 	}
 	security.policyId = m_authPolicy.c_str();
-	if (!strcmp(security.policyId, "anonymous"))
+	if (PolicyIdToUserTokenType(security.policyId) == OpcUa_UserTokenType_Anonymous)
 	{
 		logger->info("Using anonymous authentication policy");
 		security.username = NULL;
@@ -618,25 +695,46 @@ Logger	*logger = Logger::getLogger();
 				matchedPolicyURL = true;
 			}
 			logger->debug("%d: checking user ID tokens", i);
-			SOPC_ClientHelper_UserIdentityToken* userIds = endpoints->endpoints[i].userIdentityTokens;
-			for (int32_t j = 0; matched == false && j < endpoints->endpoints[i].nbOfUserIdentityTokens; j++)
+			if (matchedMode && matchedPolicyURL)
 			{
-				if (userIds[j].policyId && strcmp(security.policyId, userIds[j].policyId))
+				SOPC_ClientHelper_UserIdentityToken* userIds = endpoints->endpoints[i].userIdentityTokens;
+				for (int32_t j = 0; matched == false && j < endpoints->endpoints[i].nbOfUserIdentityTokens; j++)
 				{
-					logger->debug("%d: '%s' != '%s'", i, security.policyId, userIds[j].policyId);
-					continue;
+					OpcUa_UserTokenType tokenType = PolicyIdToUserTokenType(security.policyId);
+
+					if (userIds[j].tokenType == tokenType &&
+						userIds[j].securityPolicyUri &&
+						!strcmp(userIds[j].securityPolicyUri, security.security_policy))
+					{
+						matchedPolicyId = true;
+					}
+					else if (userIds[j].tokenType == tokenType && tokenType == OpcUa_UserTokenType_Anonymous)
+					{
+						matchedPolicyId = true;
+					}
+					else
+					{
+						matchedPolicyId = false;
+					}
+
+					if (matchedPolicyId)
+					{
+						security.policyId = userIds[j].policyId; // Policy Id must match the OPC UA server's name for it
+						logger->debug("Endpoint %d matches on policyId %s (%d)", i, security.policyId, (int) userIds[j].tokenType);
+						matched = true;
+					}
+					else
+					{
+						logger->debug("%d: '%s' != '%s' (%d)", i, security.policyId, userIds[j].policyId, (int) userIds[j].tokenType);
+						continue;
+					}
 				}
-				else
-				{
-					matchedPolicyId = true;
-					logger->debug("Endpoint %d matches on policyId %s", i, security.policyId);
-				}
-				matched = true;
 			}
 		}
 		if (!matched)
 		{
-			logger->fatal("Failed to match any server endpoints with Security Mode '%s', Security Policy '%s', Authentication policy '%s'", securityMode(m_secMode).c_str(), m_secPolicy.c_str(), m_authPolicy.c_str());
+			logger->fatal("Failed to match any server endpoints with Security Mode '%s', Security Policy '%s', Authentication policy '%s'",
+				securityMode(m_secMode).c_str(), security.security_policy, m_authPolicy.c_str());
 			if (!matchedMode)
 				logger->error("There are no endpoints that match the security mode requested");
 			if (!matchedPolicyURL)
@@ -645,14 +743,15 @@ Logger	*logger = Logger::getLogger();
 			if (!matchedPolicyId)
 				logger->error("There are no endpoints that match the Policy Id %s",
 						security.policyId);
-                        SOPC_ClientHelper_Finalize();
+            SOPC_ClientHelper_Finalize();
 			SOPC_CommonHelper_Clear();
 			m_init = false;
 			throw runtime_error("Failed to find matching endpoint in OPC/UA server");
 		}
 		else
 		{
-			logger->info("At least one Endpoint matched with OPCUA server");
+			logger->info("Matched Endpoint: Security Mode '%s', Security Policy '%s', Authentication policy '%s'",
+				securityMode(security.security_mode).c_str(), security.security_policy, security.policyId);
 		}
 	}
 
@@ -699,7 +798,7 @@ Logger	*logger = Logger::getLogger();
 				logger->fatal("Invalid password %s", security.password);
 				break;
 		}
-		throw runtime_error("Failed to create succesful S2OPCUA configuration");;
+		throw runtime_error("Failed to create successful S2OPCUA configuration");;
 	}
 
 	m_connectionId = SOPC_ClientHelper_CreateConnection(m_configurationId);
@@ -721,6 +820,8 @@ Logger	*logger = Logger::getLogger();
 	}
 
 	m_connected = true;
+	logger->info("Successfully connected to OPC/UA Server: %s", m_url.c_str());
+
 	if (endpoints)
 	{
 		if (endpoints->endpoints)
@@ -797,6 +898,11 @@ OPCUA::stop()
 	{
 		free(m_path_key_cli);
 		m_path_key_cli = NULL;
+	}
+	if (m_traceFile)
+	{
+		free(m_traceFile);
+		m_traceFile = NULL;
 	}
 }
 

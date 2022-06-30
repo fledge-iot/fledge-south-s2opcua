@@ -70,19 +70,19 @@ static const char *default_config = QUOTE({
             "order" : "5"
             },
     "securityMode" : {
-            "description" : "Security mode to use while connecting to OPCUA server" ,
+            "description" : "Security Mode to use while connecting to OPCUA server" ,
             "type" : "enumeration",
             "options":["None", "Sign", "SignAndEncrypt"],
             "default" : "None",
-            "displayName" : "Security mode",
+            "displayName" : "Security Mode",
             "order" : "6"
             },
     "securityPolicy" : {
-            "description" : "Security policy to use while connecting to OPCUA server" ,
+            "description" : "Security Policy to use while connecting to OPCUA server" ,
             "type" : "enumeration",
             "options":["None", "Basic256", "Basic256Sha256"],
             "default" : "None",
-            "displayName" : "Security policy",
+            "displayName" : "Security Policy",
             "order" : "7",
             "validity": " securityMode == \"Sign\" || securityMode == \"SignAndEncrypt\" "
             },
@@ -91,7 +91,7 @@ static const char *default_config = QUOTE({
             "type" : "enumeration",
             "options":["anonymous", "username"],
             "default" : "anonymous",
-            "displayName" : "User authentication policy",
+            "displayName" : "User Authentication Policy",
             "order" : "8"
             },
     "username" : {
@@ -111,44 +111,51 @@ static const char *default_config = QUOTE({
             "validity": " userAuthPolicy == \"username\" "
             },
     "caCert" : {
-            "description" : "CA certificate authority file in DER format" ,
+            "description" : "Certificate Authority file in DER format" ,
             "type" : "string",
             "default" : "",
-            "displayName" : "CA certificate authority",
+            "displayName" : "CA Certificate Authority",
             "order" : "11",
             "validity": " securityMode == \"Sign\" || securityMode == \"SignAndEncrypt\" "
             },
     "serverCert" : {
-            "description" : "Server certificate in the DER format" ,
+            "description" : "Server certificate file in DER format" ,
             "type" : "string",
             "default" : "",
-            "displayName" : "Server public key",
+            "displayName" : "Server Public Certificate",
             "order" : "12",
             "validity": " securityMode == \"Sign\" || securityMode == \"SignAndEncrypt\" "
             },
     "clientCert" : {
-            "description" : "Client public key file in DER format" ,
+            "description" : "Client certificate file in DER format" ,
             "type" : "string",
             "default" : "",
-            "displayName" : "Client public key",
+            "displayName" : "Client Public Certificate",
             "order" : "13",
             "validity": " securityMode == \"Sign\" || securityMode == \"SignAndEncrypt\" "
             },
     "clientKey" : {
-            "description" : "Client private key file in DER format" ,
+            "description" : "Client private key file in PEM format" ,
             "type" : "string",
             "default" : "",
-            "displayName" : "Client private key",
+            "displayName" : "Client Private Key",
             "order" : "14",
             "validity": " securityMode == \"Sign\" || securityMode == \"SignAndEncrypt\" "
             },
     "caCrl" : {
-            "description" : "Certificate Revocation List in DER format" ,
+            "description" : "Certificate Revocation List file in DER format" ,
             "type" : "string",
             "default" : "",
-            "displayName" : "Certificate revocation list",
+            "displayName" : "Certificate Revocation List",
             "order" : "15",
             "validity": " securityMode == \"Sign\" || securityMode == \"SignAndEncrypt\" "
+            },
+    "traceFile" : {
+            "description" : "Enable trace file for debugging" ,
+            "type" : "boolean",
+            "default" : "false",
+            "displayName" : "Debug Trace File",
+            "order" : "16"
             }
     });
 
@@ -194,7 +201,7 @@ string    url;
     }
     else
     {
-        Logger::getLogger()->fatal("UPC UA plugin is missing a URL");
+        Logger::getLogger()->fatal("OPC UA plugin is missing a URL");
         throw exception();
     }
     parse_config(opcua, *config, false);
@@ -248,7 +255,7 @@ void parse_config(OPCUA *opcua, ConfigCategory &config, bool reconf)
             }
             else
             {
-                Logger::getLogger()->fatal("UPC UA plugin is missing a subscriptions array");
+                Logger::getLogger()->fatal("OPC UA plugin is missing a subscriptions array");
                 throw exception();
             }
         }
@@ -259,9 +266,10 @@ void parse_config(OPCUA *opcua, ConfigCategory &config, bool reconf)
         opcua->setSecMode(config.getValue("securityMode"));
     }
 
+    std::string secPolicy;
     if (config.itemExists("securityPolicy"))
     {
-        std::string secPolicy = config.getValue("securityPolicy");
+        secPolicy = config.getValue("securityPolicy");
         if(secPolicy.compare("None")==0 || secPolicy.compare("Basic256")==0 || secPolicy.compare("Basic256Sha256")==0)
             opcua->setSecPolicy(secPolicy);
         else
@@ -270,7 +278,8 @@ void parse_config(OPCUA *opcua, ConfigCategory &config, bool reconf)
 
     if (config.itemExists("userAuthPolicy"))
     {
-        opcua->setAuthPolicy(config.getValue("userAuthPolicy"));
+        std::string authPolicy = config.getValue("userAuthPolicy");
+        opcua->setAuthPolicy(authPolicy);
     }
 
     if (config.itemExists("username"))
@@ -307,6 +316,11 @@ void parse_config(OPCUA *opcua, ConfigCategory &config, bool reconf)
     {
         opcua->setRevocationList(config.getValue("caCrl"));
     }
+
+    if (config.itemExists("traceFile"))
+    {
+        opcua->setTraceFile(config.getValue("traceFile"));
+    }
 }
 
 /**
@@ -341,7 +355,7 @@ Reading plugin_poll(PLUGIN_HANDLE *handle)
 {
 OPCUA *opcua = (OPCUA *)handle;
 
-    throw runtime_error("OPCUA is an async plugin, poll should not be called");
+    throw runtime_error("OPC UA is an async plugin, poll should not be called");
 }
 
 /**
@@ -355,9 +369,9 @@ OPCUA        *opcua = (OPCUA *)*handle;
 
     opcua->stop();
     parse_config(opcua, config, true);
-    Logger::getLogger()->info("UPC UA plugin restart in progress...");
+    Logger::getLogger()->info("OPC UA plugin restart in progress...");
     opcua->start();
-    Logger::getLogger()->info("UPC UA plugin restarted after reconfigure");
+    Logger::getLogger()->info("OPC UA plugin restarted after reconfigure");
 }
 
 /**

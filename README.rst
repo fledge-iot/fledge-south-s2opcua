@@ -17,17 +17,13 @@ Configuration
 
 This configuration of this plugin requires following parameters to be set:
 
-asset
+Asset Name
   An asset name prefix that is added to the OPC UA variables retrieved from the OPC UA server
 
-url
+OPCUA Server URL
   The URL used to connect the server, of the form *opc.tcp://<hostname>:<port>/...*
 
-subscribeById
-  A toggle that determines if the subscriptions are to be treated as
-  OPC UA node names or as browse names.
-
-subscriptions
+OPCUA Object Subscriptions
   An array of OPC UA node names that will control the subscription to
   variables in the OPC UA server.
 
@@ -61,40 +57,41 @@ Most examples come from the Simulation Object in the Prosys OPC UA Simulation Se
 
 https://www.prosysopc.com/products/opc-ua-simulation-server/
 
-reportingInterval
+Min Reporting Interval
   The minimum reporting interval for data change notifications
 
-securityMode
-  Security mode to use while connecting to OPCUA server. Options are "None", "Sign" & "SignAndEncrypt".
+Security Mode
+  Security mode to use while connecting to OPCUA server. Options are "None", "Sign" & "SignAndEncrypt."
 
-securityPolicy
-  Security policy to use while connecting to OPCUA server. Options are "None", "Basic256" & "Basic256Sha256".
+Security Policy
+  Security policy to use while connecting to OPCUA server. Options are "None", "Basic256" & "Basic256Sha256."
 
-userAuthPolicy
-  User authentication policy to use while connecting to OPCUA server. Supported values are "anonymous" & "username".
+User Authentication Policy
+  User authentication policy to use while connecting to OPCUA server. Supported values are "anonymous" & "username."
 
-username
-  Username to use when userAuthPolicy is set to "username".
+Username
+  Username to use when userAuthPolicy is set to "username."
 
-password
-  Password to use when userAuthPolicy is set to "username".
+Password
+  Password to use when userAuthPolicy is set to "username."
 
-caCert
-  CA certificate authority file path in DER format. Applicable when securityMode is "Sign" or "SignAndEncrypt".
+CA Certificate Authority
+  CA Certificate Authority file path in DER format. Applicable when securityMode is "Sign" or "SignAndEncrypt."
 
-serverCert
-  Server certificate file path in DER format. Applicable when securityMode is "Sign" or "SignAndEncrypt".
+Server Public Certificate
+  Server certificate file path in DER format. Applicable when securityMode is "Sign" or "SignAndEncrypt."
 
-clientCert
-  Client certificate file path in DER format. Applicable when securityMode is "Sign" or "SignAndEncrypt".
+Client Public Certificate
+  Client certificate file path in DER format. Applicable when securityMode is "Sign" or "SignAndEncrypt."
 
-clientKey
-  Client private key file path in DER format. Applicable when securityMode is "Sign" or "SignAndEncrypt".
+Client Private Key
+  Client private key file path in PEM format. Applicable when securityMode is "Sign" or "SignAndEncrypt."
 
-caCrl
-  Certificate Revocation List in DER format. Applicable when securityMode is "Sign" or "SignAndEncrypt".
+Certificate Revocation List
+  Certificate Revocation List in DER format. Applicable when securityMode is "Sign" or "SignAndEncrypt."
 
-
+Debug Trace File
+  Enable the S2OPCUA OPCUA Toolkit trace file for debugging. If enabled, log files will appear in the directory */usr/local/fledge/data/logs*.
 
 Building S2OPC
 ------------------

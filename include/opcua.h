@@ -12,13 +12,16 @@
 #include <string>
 #include <reading.h>
 #include <logger.h>
+#include <utils.h>
 #include <mutex>
 #include <thread>
 #include <stdlib.h>
 #include <map>
 extern "C" {
-#include "libs2opc_common_config.h"    
+#include "sopc_logger.h"
+#include "libs2opc_common_config.h"
 #include "libs2opc_client_cmds.h"
+#include "sopc_logger.h"
 };
 
 class OpcUaClient;
@@ -66,6 +69,7 @@ class OPCUA
         void        setClientCert(const std::string& cert) { m_clientPublic = cert; }
         void        setClientKey(const std::string& key) { m_clientPrivate = key; }
         void        setRevocationList(const std::string& cert) { m_caCrl = cert; }
+        void        setTraceFile(const std::string& traceFile);
 	void        dataChange(const char *nodeId, const SOPC_DataValue *value);
 	void	    disconnect();
 	void	    retry();
@@ -122,6 +126,7 @@ class OPCUA
         int                 	m_nodeIdsSize;
 		
         bool                 	m_disableCertVerif;
+        char                 	*m_traceFile;
         uint32_t             	m_maxKeepalive;
 	char			*m_path_cert_auth;
 	char			*m_path_crl;
