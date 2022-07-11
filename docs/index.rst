@@ -289,8 +289,8 @@ This command will prompt for the Import Password.
 If you created a password when you downloaded the PKCS#12 Certificate and Key file, enter it now.
 If you did not create a password, hit Enter.
 
-Importing the Certificate and Key Files into Fledge
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Importing the Certificate and Key Files
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Launch the Fledge GUI.
 Navigate to the Certificate Store.
