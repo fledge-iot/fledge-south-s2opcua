@@ -71,7 +71,7 @@ class OPCUA
         void        setRevocationList(const std::string& cert) { m_caCrl = cert; }
         void        setTraceFile(const std::string& traceFile);
 	void        dataChange(const char *nodeId, const SOPC_DataValue *value);
-	void	    disconnect();
+	void	    disconnect(const uint32_t connectionId);
 	void	    retry();
     private:
 
@@ -92,6 +92,7 @@ class OPCUA
     private:
         int         		subscribe();
 	void			browse(const std::string& nodeId, std::vector<std::string>&);
+    SOPC_ClientHelper_GetEndpointsResult *GetEndPoints(const char *endPointUrl);
 	std::string		securityMode(OpcUa_MessageSecurityMode mode);
 	std::string		nodeClass(OpcUa_NodeClass nodeClass);
 	int32_t			m_connectionId;
