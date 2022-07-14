@@ -95,6 +95,40 @@ static OpcUa_UserTokenType PolicyIdToUserTokenType(const char *policyId)
 }
 
 /**
+ * Convert SOPC_DateTime to a string in ISO8601 format with subseconds and UTC time zone
+ *
+ * @param timestamp	SOPC_DateTime to convert
+ */
+static std::string DateTimeToString(SOPC_DateTime timestamp)
+{
+	const int64_t daysBetween1601And1970 = 134774;
+	const int64_t secsFrom1601To1970 = daysBetween1601And1970 * 24 * 3600LL;
+
+	// Convert timestamp to time_t and subseconds
+	int64_t raw = static_cast<int64_t>(timestamp);
+	uint64_t micro = raw % 10000000;
+	raw -= micro;
+	raw = raw / 10000000LL;
+	struct timeval tm;
+	tm.tv_sec = (time_t)(raw - secsFrom1601To1970);
+	tm.tv_usec = (suseconds_t)(micro / 10);
+
+	// Populate tm structure with UTC time
+	struct tm timeinfo;
+	gmtime_r(&tm.tv_sec, &timeinfo);
+
+	// Build date_time with format YYYY-MM-DD HH24:MM:SS.MS+00:00
+	// Create datetime with seconds
+	char date_time[40], usec[15];
+	std::strftime(date_time, sizeof(date_time), "%Y-%m-%d %H:%M:%S", &timeinfo);
+
+	// Add microseconds and the UTC time zone offset of zero
+	snprintf(usec, sizeof(usec), ".%06lu+00:00", tm.tv_usec);
+	strcat(date_time, usec);
+	return std::string(date_time);
+}
+
+/**
  * Free memory from an SOPC Endpoints collection
  *
  * @param endpoints	An SOPC Endpoints collection
@@ -190,6 +224,9 @@ DatapointValue* dpv = NULL;
 					dpv = new DatapointValue(str);
 					break;
 				}
+				case SOPC_DateTime_Id:
+					dpv = new DatapointValue(DateTimeToString(variant.Value.Date));
+					break;
 				case SOPC_ByteString_Id:
 					Logger::getLogger()->warn("Node %s: Unable to handle ByteStrings currently", nodeId);
 					break;
