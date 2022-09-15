@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
-##--------------------------------------------------------------------
-## Copyright (c) 2021 Dianomic Systems
+##---------------------------------------------------------------------------
+## Copyright (c) 2022 Dianomic Systems Inc.
 ##
 ## Licensed under the Apache License, Version 2.0 (the "License");
 ## you may not use this file except in compliance with the License.
@@ -14,13 +14,11 @@
 ## WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 ## See the License for the specific language governing permissions and
 ## limitations under the License.
-##--------------------------------------------------------------------
+##---------------------------------------------------------------------------
 
 ##
 ## Author: Amandeep Singh Arora, Mark Riddoch
 ##
-
-fledge_location=`pwd`
 os_name=`(grep -o '^NAME=.*' /etc/os-release | cut -f2 -d\" | sed 's/"//g')`
 os_version=`(grep -o '^VERSION_ID=.*' /etc/os-release | cut -f2 -d\" | sed 's/"//g')`
 echo "Platform is ${os_name}, Version: ${os_version}"
@@ -57,18 +55,11 @@ tar xf check-0.15.2.tar.gz
 )
 
 # S2OPC
-git clone https://gitlab.com/systerel/S2OPC.git
+git clone https://gitlab.com/systerel/S2OPC.git --branch S2OPC_Toolkit_1.2.0 --depth 1
 (
 	cd S2OPC
 	cp ../S2OPC.patch .
-	git apply S2OPC.patch   # apply S2OPC code changes
-	ed tests/ClientServer/unit_tests/helpers/check_logger.c << EOED
-498
-s/%z/%d/
-s/%z/%ld/
-w
-q
-EOED
+	git apply S2OPC.patch
 	BUILD_SHARED_LIBS=OFF
 	CMAKE_INSTALL_PREFIX=/usr/local
 	./build.sh

@@ -14,6 +14,7 @@
 #include <logger.h>
 #include <map>
 #include <unistd.h>
+#include <chrono>
 
 using namespace std;
 
@@ -24,22 +25,21 @@ static OPCUA *opcua = NULL;
 
 
 /**
- * Callback function for a disconnection deom the OPCUA server
+ * Callback function for a disconnection from the OPCUA server
  *
- * @param c_id	The conenction ID
+ * @param connectionId	The connection ID
  */
-static void disconnect_callback(const uint32_t c_id)
+static void disconnect_callback(const uint32_t connectionId)
 {
-	Logger::getLogger()->info("Client %u disconnected.", c_id);
 	if (opcua)
 	{
-	    opcua->disconnect();
+	    opcua->disconnect(connectionId);
 	}
 }
 
 /**
  * Callback function called when a change occurs in one of the nodes
- * that we have registered to receives changes.
+ * that we have registered to receive changes.
  *
  * @param c_id	The connection id
  * @param d_id	The data id of the changed node
@@ -64,10 +64,109 @@ static void retryThread(void *data)
 }
 
 /**
+ * Convert the user authentication Policy Id to OpcUa_UserTokenType
+ *
+ * @param policyId	PolicyId string: anonymous or username
+ */
+static OpcUa_UserTokenType PolicyIdToUserTokenType(const char *policyId)
+{
+	if (policyId && strlen(policyId))
+	{
+		char anonymous[] ="anonymous";
+		char username[] ="username";
+
+		if (!strncmp(policyId, anonymous, strlen(anonymous)))
+		{
+			return OpcUa_UserTokenType_Anonymous;
+		}
+		else if (!strncmp(policyId, username, strlen(username)))
+		{
+			return OpcUa_UserTokenType_UserName;
+		}
+		else
+		{
+			return OpcUa_UserTokenType_SizeOf; // use this token type as an error condition
+		}
+	}
+	else
+	{
+		return OpcUa_UserTokenType_SizeOf; // use this token type as an error condition
+	}
+}
+
+/**
+ * Convert SOPC_DateTime to a string in ISO8601 format with subseconds and UTC time zone
+ *
+ * @param timestamp	SOPC_DateTime to convert
+ */
+static std::string DateTimeToString(SOPC_DateTime timestamp)
+{
+	const int64_t daysBetween1601And1970 = 134774;
+	const int64_t secsFrom1601To1970 = daysBetween1601And1970 * 24 * 3600LL;
+
+	// Convert timestamp to time_t and subseconds
+	int64_t raw = static_cast<int64_t>(timestamp);
+	uint64_t micro = raw % 10000000;
+	raw -= micro;
+	raw = raw / 10000000LL;
+	struct timeval tm;
+	tm.tv_sec = (time_t)(raw - secsFrom1601To1970);
+	tm.tv_usec = (suseconds_t)(micro / 10);
+
+	// Populate tm structure with UTC time
+	struct tm timeinfo;
+	gmtime_r(&tm.tv_sec, &timeinfo);
+
+	// Build date_time with format YYYY-MM-DD HH24:MM:SS.MS+00:00
+	// Create datetime with seconds
+	char date_time[40], usec[15];
+	std::strftime(date_time, sizeof(date_time), "%Y-%m-%d %H:%M:%S", &timeinfo);
+
+	// Add microseconds and the UTC time zone offset of zero
+	snprintf(usec, sizeof(usec), ".%06lu+00:00", tm.tv_usec);
+	strcat(date_time, usec);
+	return std::string(date_time);
+}
+
+/**
+ * Free memory from an SOPC Endpoints collection
+ *
+ * @param endpoints	An SOPC Endpoints collection
+ */
+static void FreeEndpointCollection(SOPC_ClientHelper_GetEndpointsResult *endpoints)
+{
+	if (endpoints)
+	{
+		if (endpoints->endpoints)
+		{
+			for (int32_t i = 0; i < endpoints->nbOfEndpoints; i++)
+			{
+				free(endpoints->endpoints[i].endpointUrl);
+				free(endpoints->endpoints[i].security_policyUri);
+				free(endpoints->endpoints[i].transportProfileUri);
+				if (NULL != endpoints->endpoints[i].userIdentityTokens)
+				{
+					for (int32_t j = 0; j < endpoints->endpoints[i].nbOfUserIdentityTokens; j++)
+					{
+						free(endpoints->endpoints[i].userIdentityTokens[j].policyId);
+						free(endpoints->endpoints[i].userIdentityTokens[j].issuedTokenType);
+						free(endpoints->endpoints[i].userIdentityTokens[j].issuerEndpointUrl);
+						free(endpoints->endpoints[i].userIdentityTokens[j].securityPolicyUri);
+					}
+				free(endpoints->endpoints[i].userIdentityTokens);
+				}
+			}
+		    free(endpoints->endpoints);
+		}
+		free(endpoints);
+	}
+}
+
+/**
  * A data value we are monitoring has changed
  *
  * @param nodeId	The ID of the node that has changed
- * @param value		The new vlaue of the node
+ * @param value		The new value of the node
  */
 void OPCUA::dataChange(const char *nodeId, const SOPC_DataValue *value)
 {
@@ -78,7 +177,7 @@ DatapointValue* dpv = NULL;
 		m_background->join();
 		m_background = NULL;
 	}
-	Logger::getLogger()->debug("Data change call for node %s", nodeId);
+	Logger::getLogger()->debug("Data change call for Node %s", nodeId);
 	if (value)
 	{
 		SOPC_Variant variant = value->Value;
@@ -125,33 +224,35 @@ DatapointValue* dpv = NULL;
 					dpv = new DatapointValue(str);
 					break;
 				}
+				case SOPC_DateTime_Id:
+					dpv = new DatapointValue(DateTimeToString(variant.Value.Date));
+					break;
 				case SOPC_ByteString_Id:
-					Logger::getLogger()->warn("Unable to handle ByteStrings currently");
+					Logger::getLogger()->warn("Node %s: Unable to handle ByteStrings currently", nodeId);
 					break;
 				case SOPC_Null_Id:
-					Logger::getLogger()->warn("Unable to handle items with Null type");
+					Logger::getLogger()->warn("Node %s: Unable to handle items with Null type", nodeId);
 					break;
 				default:
-					Logger::getLogger()->warn("Unable to determine type %d", variant.BuiltInTypeId);
+					Logger::getLogger()->warn("Node %s: Unable to determine type %d", nodeId, (int)variant.BuiltInTypeId);
 					break;
 			}
 		}
 		else if (variant.ArrayType == SOPC_VariantArrayType_Array)
 		{
 			// TODO Support Array types
-			Logger::getLogger()->error("Array types not supported");
+			Logger::getLogger()->error("Node %s: Array type not supported", nodeId);
 		}
 		else if (variant.ArrayType == SOPC_VariantArrayType_Matrix)
 		{
-			Logger::getLogger()->error("Change in matrix type node %s, matrices not supported",
-					nodeId);
+			Logger::getLogger()->error("Node %s: Matrix type not supported", nodeId);
 		}
 		else
 		{
-			Logger::getLogger()->error("Unable to determine array type");
+			Logger::getLogger()->error("Node %s: Unable to determine array type", nodeId);
 		}
 
-    		if (dpv)
+    	if (dpv)
 		{
 			vector<Datapoint *>    points;
 			string dpname = nodeId;
@@ -172,13 +273,14 @@ DatapointValue* dpv = NULL;
 	}
 }
 
-
 /**
  * Constructor for the opcua plugin
  */
 OPCUA::OPCUA(const string& url) : m_url(url), 
 				m_connected(false), m_publishPeriod(1000),
 				m_maxKeepalive(30), m_tokenTarget(1),
+				m_configurationId(0),
+				m_connectionId(0),
 				m_disableCertVerif(false),
 				m_path_cert_auth(NULL),
 				m_path_crl(NULL),
@@ -187,7 +289,8 @@ OPCUA::OPCUA(const string& url) : m_url(url),
 				m_path_key_cli(NULL),
 				m_stopped(false),
 				m_background(NULL),
-				m_init(false)
+				m_init(false),
+				m_traceFile(NULL)
 {
 	opcua = this;
 }
@@ -264,6 +367,28 @@ OPCUA::setSecPolicy(const std::string& secPolicy)
 }
 
 /**
+ * Create an S2OPC OPCUA Toolkit trace file name if requested
+ *
+ * @param traceFile    If true, create an S2OPC OPCUA Toolkit trace file
+ */
+void
+OPCUA::setTraceFile(const std::string& traceFile)
+{
+	if (traceFile == "True" || traceFile == "true" || traceFile == "TRUE")
+	{
+		string traceFilePath = getDataDir() + string("/logs/");
+		size_t len = traceFilePath.length();
+		m_traceFile = (char *) malloc(1 + len);
+		strncpy(m_traceFile, traceFilePath.c_str(), len);
+		m_traceFile[len] = '\0';
+	}
+	else
+	{
+		m_traceFile = NULL;
+	}
+}
+
+/**
  * Clear down the subscriptions ahead of reconfiguration
  */
 void
@@ -294,7 +419,7 @@ OPCUA::restart()
 }
 
 /**
- * Add a set of subscriptions based on the content of m_subscripts. This
+ * Add a set of subscriptions based on the content of m_subscriptions. This
  * is a vector of node ID's
  */
 int OPCUA::subscribe()
@@ -316,24 +441,31 @@ Logger *logger = Logger::getLogger();
 	vector<string> variables;
 	for (auto it = m_subscriptions.cbegin(); it != m_subscriptions.cend(); it++)
 	{
-		Node node(m_connectionId, *it);
-		if (node.getNodeClass() == OpcUa_NodeClass_Variable)
+		try
 		{
-			variables.push_back(*it);
+			Node node(m_connectionId, *it);
+			if (node.getNodeClass() == OpcUa_NodeClass_Variable)
+			{
+				variables.push_back(*it);
+			}
+			else
+			{
+				browse(*it, variables);
+			}
 		}
-		else
+		catch(...)
 		{
-			browse(*it, variables);
+			logger->error("Unable to read Node %s", it->c_str());
 		}
 	}
-
 	if (variables.size() == 0)
 	{
 		logger->error("No variables found to be monitored");
 		return 0;
 	}
-	char **node_ids = (char **)malloc(variables.size() * sizeof(char *));
-	if (!node_ids)
+	
+	char **node_ids = (char **)calloc(variables.size(), sizeof(char *));
+	if (node_ids == NULL)
 	{
 		logger->error("Failed to allocate memory for %d subscriptions", variables.size());
 		return 0;
@@ -344,34 +476,34 @@ Logger *logger = Logger::getLogger();
 		try {
 			Node *node = new Node(m_connectionId, variables[i].c_str());
 			m_nodes.insert(pair<string, Node *>(variables[i], node));
-			logger->debug("Subscribe to node %s, browseName %s", node->getNodeId().c_str(), node->getBrowseName().c_str());
+			logger->debug("Subscribe to Node %s, BrowseName %s", node->getNodeId().c_str(), node->getBrowseName().c_str());
 			node_ids[i++] = strdup((char *)it->c_str());
 		} catch (...) {
-			logger->error("Unable to subscribe to node %s", it->c_str());
+			logger->error("Unable to subscribe to Node %s", it->c_str());
 		}
 	}
-	res = SOPC_ClientHelper_AddMonitoredItems(m_connectionId, node_ids, variables.size());
+	res = SOPC_ClientHelper_AddMonitoredItems(m_connectionId, node_ids, variables.size(), NULL);
 	switch (res)
 	{
 	case 0:
-		logger->debug("Added %d monitored items", variables.size());
+		logger->info("Added %d Monitored Items", (int)variables.size());
 		break;
 	case -1:
-		logger->error("Failed to add monitored items, connection not valid");
+		logger->error("Failed to add %d Monitored Items, connection not valid", (int)variables.size());
 		break;
 	case -2:
-		logger->error("Failed to add monitored items, invalid nodes for %d nodes", variables.size());
+		logger->error("Failed to add Monitored Items, invalid nodes for %d nodes", (int)variables.size());
 		break;
 	case -100:
-		logger->error("Failed to add monitored items");
+		logger->error("Failed to add %d Monitored Items", (int)variables.size());
 		break;
 	default:
-		logger->error("Failed to add monitored items, nodeid '%s' not valid", node_ids[abs(res) - 3]);
+		logger->error("Failed to add %d Monitored Items, NodeId '%s' not valid", (int)variables.size(), node_ids[abs(res) - 3]);
 		break;
 	}
 	for (i = 0; i < variables.size(); i++)
 	{
-		free(node_ids[i]);
+		if (node_ids[i]) free(node_ids[i]);
 	}
 	free(node_ids);
 	return res;
@@ -394,46 +526,50 @@ int n_subscriptions = 0;
 SOPC_ClientHelper_Security security;
 Logger	*logger = Logger::getLogger();
 
+	logger->debug("Calling OPCUA::start");
 	m_stopped = false;
 
-	if (m_init == false && SOPC_ClientHelper_Initialize("/tmp/s2opc_wrapper_subscribe_logs/",
-				SOPC_LOG_LEVEL_ERROR, disconnect_callback) != 0)
+	if (m_init == false)
 	{
-		logger->fatal("Unable to initialise S2OPC library");
-		throw runtime_error("Unable to initialise library");
-	}
-	m_init = true;
-
-	int res;
-	SOPC_ClientHelper_GetEndpointsResult *endpoints = NULL;
-	if ((res = SOPC_ClientHelper_GetEndpoints(m_url.c_str(), &endpoints)) == 0)
-	{
-		logger->info("Server has %d endpoints.\n", endpoints->nbOfEndpoints);
-
-		for (int32_t i = 0; i < endpoints->nbOfEndpoints; i++)
+		SOPC_Log_Configuration logConfig = SOPC_Common_GetDefaultLogConfiguration();
+		if (m_traceFile)
 		{
-			logger->info("%d - url: %s\n", i, endpoints->endpoints[i].endpointUrl);
-			logger->info("%d - security level: %d\n", i, endpoints->endpoints[i].securityLevel);
-			logger->info("%d - security mode: %d\n", i, endpoints->endpoints[i].security_mode);
-			logger->info("%d - security policy Uri: %s\n", i, endpoints->endpoints[i].security_policyUri);
-			logger->info("%d - transport profile Uri: %s\n", i, endpoints->endpoints[i].transportProfileUri);
-
-			SOPC_ClientHelper_UserIdentityToken* userIds = endpoints->endpoints[i].userIdentityTokens;
-			for (int32_t j = 0; j < endpoints->endpoints[i].nbOfUserIdentityTokens; j++)
-			{
-				logger->info("%d %d - policy Id: %s\n", i, j, userIds[j].policyId);
-				logger->info("%d %d - token type: %d\n", i, j, userIds[j].tokenType);
-				logger->info("%d %d - issued token type: %s\n", i, j, userIds[j].issuedTokenType);
-				logger->info("%d %d - issuer endpoint Url: %s\n", i, j, userIds[j].issuerEndpointUrl);
-				logger->info("%d %d - security policy Uri: %s\n", i, j, userIds[j].securityPolicyUri);
-			}
+			logConfig.logSysConfig.fileSystemLogConfig.logDirPath = m_traceFile;
+			logConfig.logSystem = SOPC_LOG_SYSTEM_FILE;
+			logConfig.logLevel = SOPC_LOG_LEVEL_DEBUG;
 		}
-	}
-	else
-	{
-		logger->error("Unable to retrieve OPCUA endpoints: %d", res);
+		else
+		{
+			logConfig.logSysConfig.fileSystemLogConfig.logDirPath = NULL;
+			logConfig.logSystem = SOPC_LOG_SYSTEM_NO_LOG;
+		}
+
+		SOPC_ReturnStatus initStatus = SOPC_CommonHelper_Initialize(&logConfig);
+		if (initStatus != SOPC_STATUS_OK)
+		{
+			logger->fatal("Unable to initialise S2OPC CommonHelper library: %d", (int) initStatus);
+			throw runtime_error("Unable to initialise CommonHelper library");
+		}
+
+		if (SOPC_ClientHelper_Initialize(disconnect_callback) != 0)
+		{
+			logger->fatal("Unable to initialise S2OPC ClientHelper library");
+			throw runtime_error("Unable to initialise ClientHelper library");
+		}
+
+		m_init = true;
 	}
 
+	// GetEndPoints is the first method call that attempts to connect to the OPC UA server.
+	// If this does not succeed, there is no way to proceed so exit immediately.
+	// GetEndPoints will start a connection retry thread.
+	SOPC_ClientHelper_GetEndpointsResult *endpoints = GetEndPoints(m_url.c_str());
+	if (endpoints == NULL)
+	{
+		return;
+	}
+
+	bool configOK = true;	// if true, plugin configuration is valid
 
 	security.security_policy = m_secPolicy.c_str();
 	security.security_mode = m_secMode;
@@ -441,30 +577,23 @@ Logger	*logger = Logger::getLogger();
 	{
 		security.security_policy = SOPC_SecurityPolicy_None_URI;
 	}
+	logger->debug("Requesting Security Mode '%s', Security Policy '%s'", securityMode(security.security_mode).c_str(), security.security_policy);
+
 	security.policyId = m_authPolicy.c_str();
-	if (!strcmp(security.policyId, "anonymous"))
+	if (PolicyIdToUserTokenType(security.policyId) == OpcUa_UserTokenType_Anonymous)
 	{
-		logger->info("Using anonymous authentication policy");
+		logger->debug("Requesting anonymous authentication policy");
 		security.username = NULL;
 		security.password = NULL;
 	}
 	else
 	{
+		logger->debug("Requesting username authentication policy");
 		security.username = m_username.c_str();
 		security.password = m_password.c_str();
 	}
 
-	string certstore = "/usr/local/fledge/data";
-	char *root = getenv("FLEDGE_ROOT");
-	if (root)
-	{
-		certstore = root;
-		certstore += "/data";
-	}
-	char *data = getenv("FLEDGE_DATA");
-	if (data)
-		certstore = data;
-	certstore += "/etc/certs/";
+	string certstore = getDataDir() + string("/etc/certs/");
 
 	if (m_secMode == OpcUa_MessageSecurityMode_None)
 	{
@@ -484,16 +613,17 @@ Logger	*logger = Logger::getLogger();
 			if (access(security.path_cert_auth, R_OK))
 			{
 				logger->error("Unable to access CA Certificate %s", security.path_cert_auth);
-				SOPC_ClientHelper_Finalize();
-				m_init = false;
-				throw runtime_error("Unable to access CA Certificate");
+				configOK = false;
 			}
-			logger->info("Using CA Cert %s", security.path_cert_auth);
+			else
+			{
+				logger->info("Using CA Certificate %s", security.path_cert_auth);
+			}
 		}
 		else
 		{
 			security.path_cert_auth = NULL;
-			logger->warn("No CA Cert has been configured");
+			logger->warn("No CA Certificate has been configured");
 		}
 		if (m_caCrl.length())
 		{
@@ -503,11 +633,12 @@ Logger	*logger = Logger::getLogger();
 			if (access(security.path_crl, R_OK))
 			{
 				logger->error("Unable to access CRL Certificate %s", security.path_crl);
-				SOPC_ClientHelper_Finalize();
-				m_init = false;
-				throw runtime_error("Unable to access CRL Certificate");
+				configOK = false;
 			}
-			logger->info("Using CRL Cert %s", security.path_crl);
+			else
+			{
+				logger->info("Using CRL Certificate %s", security.path_crl);
+			}
 		}
 		else
 		{
@@ -522,11 +653,12 @@ Logger	*logger = Logger::getLogger();
 			if (access(security.path_cert_srv, R_OK))
 			{
 				logger->error("Unable to access Server Certificate %s", security.path_cert_srv);
-				SOPC_ClientHelper_Finalize();
-				m_init = false;
-				throw runtime_error("Unable to access Server Certificate");
+				configOK = false;
 			}
-			logger->info("Using Srv Cert %s", security.path_cert_srv);
+			else
+			{
+				logger->info("Using Server Certificate %s", security.path_cert_srv);
+			}
 		}
 		else
 		{
@@ -541,11 +673,12 @@ Logger	*logger = Logger::getLogger();
 			if (access(security.path_cert_cli, R_OK))
 			{
 				logger->error("Unable to access Client Certificate %s", security.path_cert_cli);
-				SOPC_ClientHelper_Finalize();
-				m_init = false;
-				throw runtime_error("Unable to access Client Certificates");
+				configOK = false;
 			}
-			logger->info("Using Client Cert %s", security.path_cert_cli);
+			else
+			{
+				logger->info("Using Client Certificate %s", security.path_cert_cli);
+			}
 		}
 		else
 		{
@@ -566,13 +699,18 @@ Logger	*logger = Logger::getLogger();
 				security.path_key_cli = m_path_key_cli;
 				if (access(security.path_key_cli, R_OK) != F_OK)
 				{
-					logger->error("Unable to access Client key %s", security.path_key_cli);
-					SOPC_ClientHelper_Finalize();
-					m_init = false;
-					throw runtime_error("Unable to access Client key");
+					logger->error("Unable to access Client Key %s", security.path_key_cli);
+					configOK = false;
+				}
+				else
+				{
+					logger->info("Using Client Key %s", security.path_key_cli);
 				}
 			}
-			logger->info("Using Client key %s", security.path_key_cli);
+			else
+			{
+				logger->info("Using Client Key %s", security.path_key_cli);
+			}
 		}
 		else
 		{
@@ -582,10 +720,10 @@ Logger	*logger = Logger::getLogger();
 	}
 
 	// Check for a matching endpoint
+	bool matched = false;
 	if (endpoints && endpoints->endpoints)
 	{
 		logger->debug("Endpoint matching starting....");
-		bool matched = false;
 		bool matchedMode = false;
 		bool matchedPolicyURL = false;
 		bool matchedPolicyId = false;
@@ -613,25 +751,46 @@ Logger	*logger = Logger::getLogger();
 				matchedPolicyURL = true;
 			}
 			logger->debug("%d: checking user ID tokens", i);
-			SOPC_ClientHelper_UserIdentityToken* userIds = endpoints->endpoints[i].userIdentityTokens;
-			for (int32_t j = 0; matched == false && j < endpoints->endpoints[i].nbOfUserIdentityTokens; j++)
+			if (matchedMode && matchedPolicyURL)
 			{
-				if (userIds[j].policyId && strcmp(security.policyId, userIds[j].policyId))
+				SOPC_ClientHelper_UserIdentityToken* userIds = endpoints->endpoints[i].userIdentityTokens;
+				for (int32_t j = 0; matched == false && j < endpoints->endpoints[i].nbOfUserIdentityTokens; j++)
 				{
-					logger->debug("%d: '%s' != '%s'", i, security.policyId, userIds[j].policyId);
-					continue;
+					OpcUa_UserTokenType tokenType = PolicyIdToUserTokenType(security.policyId);
+
+					if (userIds[j].tokenType == tokenType &&
+						userIds[j].securityPolicyUri &&
+						!strcmp(userIds[j].securityPolicyUri, security.security_policy))
+					{
+						matchedPolicyId = true;
+					}
+					else if (userIds[j].tokenType == tokenType && tokenType == OpcUa_UserTokenType_Anonymous)
+					{
+						matchedPolicyId = true;
+					}
+					else
+					{
+						matchedPolicyId = false;
+					}
+
+					if (matchedPolicyId)
+					{
+						security.policyId = userIds[j].policyId; // Policy Id must match the OPC UA server's name for it
+						logger->debug("Endpoint %d matches on policyId %s (%d)", i, security.policyId, (int) userIds[j].tokenType);
+						matched = true;
+					}
+					else
+					{
+						logger->debug("%d: '%s' != '%s' (%d)", i, security.policyId, userIds[j].policyId, (int) userIds[j].tokenType);
+						continue;
+					}
 				}
-				else
-				{
-					matchedPolicyId = true;
-					logger->debug("Endpoint %d matches on policyId %s", i, security.policyId);
-				}
-				matched = true;
 			}
 		}
 		if (!matched)
 		{
-			logger->fatal("Failed to match any server endpoints with Security Mode '%s', Security Policy '%s', Authentication policy '%s'", securityMode(m_secMode).c_str(), m_secPolicy.c_str(), m_authPolicy.c_str());
+			logger->error("Failed to match any server endpoints with Security Mode '%s', Security Policy '%s', Authentication policy '%s'",
+				securityMode(m_secMode).c_str(), security.security_policy, m_authPolicy.c_str());
 			if (!matchedMode)
 				logger->error("There are no endpoints that match the security mode requested");
 			if (!matchedPolicyURL)
@@ -640,108 +799,99 @@ Logger	*logger = Logger::getLogger();
 			if (!matchedPolicyId)
 				logger->error("There are no endpoints that match the Policy Id %s",
 						security.policyId);
-                        SOPC_ClientHelper_Finalize();
-			m_init = false;
-			throw runtime_error("Failed to find matching endpoint in OPC/UA server");
 		}
 		else
 		{
-			logger->info("At least one Endpoint matched with OPCUA server");
+			logger->info("Matched Endpoint: Security Mode '%s', Security Policy '%s', Authentication policy '%s'",
+				securityMode(security.security_mode).c_str(), security.security_policy, security.policyId);
 		}
 	}
 
-	m_configurationId = SOPC_ClientHelper_CreateConfiguration(m_url.c_str(), &security);
-	if (m_configurationId <= 0)
+	if (configOK && matched)
 	{
-		logger->fatal("Failed to create configuration for endpoint '%s' %d", m_url.c_str(), m_configurationId);
-		switch (m_configurationId)
+		m_configurationId = SOPC_ClientHelper_CreateConfiguration(m_url.c_str(), &security, NULL);
+		logger->debug("ConfigurationId: %d", (int)m_configurationId);
+		if (m_configurationId <= 0)
 		{
-			case 0:
-				logger->fatal("Invalid endpointURL %s", m_url.c_str());
-				break;
-			case -1:
-				logger->fatal("Invalid security detected");
-				break;
-			case -11:
-				logger->fatal("Invalid security policy %s", security.security_policy);
-				break;
-			case -12:
-				logger->fatal("Invalid security mode %d", security.security_mode);
-				break;
-			case -13:
-				logger->fatal("Invalid CA Cert %s", security.path_cert_auth);
-				break;
-			case -14:
-				logger->fatal("Invalid CRL Cert %s", security.path_crl);
-				break;
-			case -15:
-				logger->fatal("Invalid Server Cert %s", security.path_cert_srv);
-				break;
-			case -16:
-				logger->fatal("Invalid Client Cert %s", security.path_cert_cli);
-				break;
-			case -17:
-				logger->fatal("Invalid Client key %s", security.path_key_cli);
-				break;
-			case -18:
-				logger->fatal("Invalid policy id %s", security.policyId);
-				break;
-			case -19:
-				logger->fatal("Invalid username %s", security.username);
-				break;
-			case -20:
-				logger->fatal("Invalid password %s", security.password);
-				break;
-		}
-		throw runtime_error("Failed to create succesful S2OPCUA configuration");;
-	}
-
-	m_connectionId = SOPC_ClientHelper_CreateConnection(m_configurationId);
-	if (m_connectionId == -1)
-	{
-		logger->fatal("Failed to create OPC/UA connection to server %s, invalid configuration detected", m_url.c_str());
-		SOPC_ClientHelper_Finalize();
-		m_init = false;
-		throw runtime_error("Failed to create OPC/UA connection to server, invalid configuration detected");
-	}
-	if (m_connectionId == -100)
-	{
-		logger->fatal("Failed to create OPC/UA connection to server %s, connection failed", m_url.c_str());
-		SOPC_ClientHelper_Finalize();
-		m_init = false;
-		throw runtime_error("Failed to create OPC/UA connection to server, connection failed");
-	}
-
-	m_connected = true;
-	if (endpoints)
-	{
-		if (endpoints->endpoints)
-		{
-			for (int32_t i = 0; i < endpoints->nbOfEndpoints; i++)
+			logger->error("Failed to create configuration for endpoint '%s' %d", m_url.c_str(), m_configurationId);
+			switch (m_configurationId)
 			{
-				free(endpoints->endpoints[i].endpointUrl);
-				free(endpoints->endpoints[i].security_policyUri);
-				free(endpoints->endpoints[i].transportProfileUri);
-				if (NULL != endpoints->endpoints[i].userIdentityTokens)
-				{
-					for (int32_t j = 0; j < endpoints->endpoints[i].nbOfUserIdentityTokens; j++)
-					{
-						free(endpoints->endpoints[i].userIdentityTokens[j].policyId);
-						free(endpoints->endpoints[i].userIdentityTokens[j].issuedTokenType);
-						free(endpoints->endpoints[i].userIdentityTokens[j].issuerEndpointUrl);
-						free(endpoints->endpoints[i].userIdentityTokens[j].securityPolicyUri);
-					}
-				free(endpoints->endpoints[i].userIdentityTokens);
-				}
+				case 0:
+					logger->error("Invalid endpointURL %s", m_url.c_str());
+					break;
+				case -1:
+					logger->error("Invalid security detected");
+					break;
+				case -11:
+					logger->error("Invalid Security Policy %s", security.security_policy);
+					break;
+				case -12:
+					logger->error("Invalid Security Mode %d", security.security_mode);
+					break;
+				case -13:
+					logger->error("Invalid CA Certificate %s", security.path_cert_auth);
+					break;
+				case -14:
+					logger->error("Invalid CRL Certificate %s", security.path_crl);
+					break;
+				case -15:
+					logger->error("Invalid Server Certificate %s", security.path_cert_srv);
+					break;
+				case -16:
+					logger->error("Invalid Client Certificate %s", security.path_cert_cli);
+					break;
+				case -17:
+					logger->error("Invalid Client key %s", security.path_key_cli);
+					break;
+				case -18:
+					logger->error("Invalid Policy Id %s", security.policyId);
+					break;
+				case -19:
+					logger->error("Invalid username %s", security.username);
+					break;
+				case -20:
+					logger->error("Invalid password %s", security.password);
+					break;
 			}
-		    free(endpoints->endpoints);
 		}
-		free(endpoints);
+		else
+		{
+			// ConfigurationId is valid. Create a connection to the OPC UA Server.
+			m_connectionId = SOPC_ClientHelper_CreateConnection(m_configurationId);
+			if (m_connectionId > 0)
+			{
+				m_connected = true;
+			}
+			else if (m_connectionId == -1)
+			{
+				m_connected = false;
+				logger->error("Failed to create OPC/UA connection to server %s, invalid configuration detected", m_url.c_str());
+			}
+			else if (m_connectionId == -100)
+			{
+				m_connected = false;
+				logger->error("Failed to create OPC/UA connection to server %s, connection failed", m_url.c_str());
+			}
+			else
+			{
+				m_connected = false;
+				logger->error("Failed to create OPC/UA connection to server %s, unknown error: %d", m_url.c_str(), (int)m_connectionId);
+			}
+		}
+	} // end if configOK && matched
+
+	FreeEndpointCollection(endpoints);
+
+	if (m_connected)
+	{
+		logger->info("Successfully connected to OPC/UA Server: %s", m_url.c_str());
+		subscribe();
 	}
-
-	subscribe();
+	else
+	{
+		logger->warn("Not connected to OPC/UA Server: %s", m_url.c_str());
+	}
 }
-
 
 /**
  * Stop all subscriptions and disconnect from the OPCUA server
@@ -749,15 +899,21 @@ Logger	*logger = Logger::getLogger();
 void
 OPCUA::stop()
 {
+	Logger::getLogger()->debug("Calling OPCUA::stop");
 	m_stopped = true;
 	if (m_connected)
 	{
-		m_connected = false;
 		SOPC_ClientHelper_Unsubscribe(m_connectionId);
 		SOPC_ClientHelper_Disconnect(m_connectionId);
+		m_connectionId = 0;
+		m_connected = false;
 	}
-	SOPC_ClientHelper_Finalize();
-	m_init = false;
+	if (m_init)
+	{
+		SOPC_ClientHelper_Finalize();
+		SOPC_CommonHelper_Clear();
+		m_init = false;
+	}
 	// TODO Cleanup memory
 	if (m_path_cert_auth)
 	{
@@ -789,6 +945,11 @@ OPCUA::stop()
 		free(m_path_key_cli);
 		m_path_key_cli = NULL;
 	}
+	if (m_traceFile)
+	{
+		free(m_traceFile);
+		m_traceFile = NULL;
+	}
 }
 
 /**
@@ -804,6 +965,73 @@ string asset = m_asset + points[0]->getName();
     Reading rdng(asset, points);
     // rdng.setUserTimestamp(user_ts);
     (*m_ingest)(m_data, rdng);
+}
+
+/**
+ * Get a list of available endpoints from the OPC UA Server
+ *
+ * @param endPointUrl	OPC UA Server Url
+ */
+SOPC_ClientHelper_GetEndpointsResult *OPCUA::GetEndPoints(const char *endPointUrl)
+{
+	Logger	*logger = Logger::getLogger();
+
+	SOPC_ClientHelper_GetEndpointsResult *endpoints = NULL;
+	try
+	{
+		int res = SOPC_ClientHelper_GetEndpoints(endPointUrl, &endpoints);
+		if (res == 0)
+		{
+			logger->debug("OPC/UA Server has %d endpoints\n", endpoints->nbOfEndpoints);
+
+			for (int32_t i = 0; i < endpoints->nbOfEndpoints; i++)
+			{
+				logger->debug("%d - url: %s\n", i, endpoints->endpoints[i].endpointUrl);
+				logger->debug("%d - security level: %d\n", i, endpoints->endpoints[i].securityLevel);
+				logger->debug("%d - security mode: %d\n", i, endpoints->endpoints[i].security_mode);
+				logger->debug("%d - security policy Uri: %s\n", i, endpoints->endpoints[i].security_policyUri);
+				logger->debug("%d - transport profile Uri: %s\n", i, endpoints->endpoints[i].transportProfileUri);
+
+				SOPC_ClientHelper_UserIdentityToken* userIds = endpoints->endpoints[i].userIdentityTokens;
+				for (int32_t j = 0; j < endpoints->endpoints[i].nbOfUserIdentityTokens; j++)
+				{
+					logger->debug("%d %d - policy Id: %s\n", i, j, userIds[j].policyId);
+					logger->debug("%d %d - token type: %d\n", i, j, userIds[j].tokenType);
+					logger->debug("%d %d - issued token type: %s\n", i, j, userIds[j].issuedTokenType);
+					logger->debug("%d %d - issuer endpoint Url: %s\n", i, j, userIds[j].issuerEndpointUrl);
+					logger->debug("%d %d - security policy Uri: %s\n", i, j, userIds[j].securityPolicyUri);
+				}
+			}
+		}
+		else
+		{
+			// If GetEndpoints fails, uninitialise the S2OPCUA Toolkit.
+			// If this is not done, an S2OPCUA background thread will throw an exception that we can't catch.
+			if (m_init)
+			{
+				SOPC_ClientHelper_Finalize();
+				SOPC_CommonHelper_Clear();
+				m_init = false;
+			}
+
+			logger->error("Error %d retrieving endpoints from OPC/UA Server: %s", res, endPointUrl);
+
+			// Start the connection retry thread.
+			if (m_background == NULL)
+			{
+				m_background = new thread(retryThread, this);
+			}
+
+			m_connectionId = 0;
+			m_connected = false;
+		}
+	}
+	catch(const std::exception& e)
+	{
+		logger->error("GetEndPoints Exception: %s", e.what());
+	}
+	
+	return endpoints;
 }
 
 /**
@@ -831,13 +1059,14 @@ SOPC_DataValue values[3];
 	if ((res = SOPC_ClientHelper_Read(conn, readValue, 3, values)) == 0)
 	{
 		SOPC_Variant variant = values[0].Value;
-		m_browseName = (char *)variant.Value.Qname->Name.Data;
+		if (variant.Value.Qname)
+			m_browseName = (char *)variant.Value.Qname->Name.Data;
 		SOPC_Variant classVariant = values[2].Value;
 		m_nodeClass = (OpcUa_NodeClass)classVariant.Value.Int32;
 	}
 	else
 	{
-		Logger::getLogger()->error("Failed to read node \"%s\", %d", nodeId.c_str(), res);
+		Logger::getLogger()->error("Failed to read Node \"%s\", %d", nodeId.c_str(), res);
 		throw runtime_error("Failed to read node");
 	}
 }
@@ -867,10 +1096,15 @@ void OPCUA::browse(const string& nodeid, vector<string>& variables)
 
 	if (res != 0)
 	{
-		Logger::getLogger()->info("Browse returned %d for node %s", res, nodeid.c_str());
+		Logger::getLogger()->info("Browse returned %d for Node %s", res, nodeid.c_str());
 		return;
 	}
 	Logger::getLogger()->debug("status: %d, nbOfResults: %d", browseResult.statusCode, browseResult.nbOfReferences);
+
+	if (browseResult.nbOfReferences == 0)
+	{
+		Logger::getLogger()->error("Unable to locate the OPCUA Node '%s'", nodeid.c_str());
+	}
 
         for (int32_t i = 0; i < browseResult.nbOfReferences; i++)
         {
@@ -896,11 +1130,15 @@ void OPCUA::browse(const string& nodeid, vector<string>& variables)
 }
 
 /**
- * Discinnection callback has been called
+ * Disconnection callback has been called
  */
-void OPCUA::disconnect()
+void OPCUA::disconnect(const uint32_t connectionId)
 {
-	Logger::getLogger()->info("OPCUA disconnection");
+	if (m_stopped)
+		Logger::getLogger()->info("OPC/UA Client %d disconnected", (int)connectionId);
+	else
+		Logger::getLogger()->warn("OPC/UA Client %d disconnected", (int)connectionId);
+
 	m_connected = false;
 	if (m_stopped == false)
 	{
@@ -919,13 +1157,14 @@ void OPCUA::disconnect()
 }
 
 /**
- * Run a background thread to rety the connection after a forced disconnect.
+ * Run a background thread to retry the connection after a forced disconnect.
  *
- * There will be a delay between retires starting at 100ms and backing off to
+ * There will be a delay between retries starting at 100ms and backing off to
  * once a minute.
  */
 void OPCUA::retry()
 {
+	static int oneminute = 60 * 1000;
 	int delay = 100;
 	while (!m_connected)
 	{
@@ -935,8 +1174,12 @@ void OPCUA::retry()
 		} catch (...) {
 			// ignore
 		}
-		if (delay < 60 * 1000)
-			delay *= 2;
+
+		delay *= 2;
+		if (delay > oneminute)
+		{
+			delay = oneminute;
+		}
 	}
 }
 
@@ -985,6 +1228,6 @@ string OPCUA::nodeClass(OpcUa_NodeClass nodeClass)
 		case OpcUa_NodeClass_SizeOf:
 			return string("SizeOf");
 	}
-	return string("Unknow");
+	return string("Unknown");
 }
 

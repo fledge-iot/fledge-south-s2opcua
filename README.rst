@@ -1,9 +1,11 @@
 ========================================================================
-OPC UA C/C++ South plugin 
+OPC UA S2OPC South plugin 
 ========================================================================
 
 A simple asynchronous OPC UA plugin that registers for change events on
 OPC UA objects.
+This plugin supports several OPC UA Security Policies and Message Security Modes.
+It supports both anonymous access and authentication using username and password.
 
 NOTE:
 
@@ -15,17 +17,13 @@ Configuration
 
 This configuration of this plugin requires following parameters to be set:
 
-asset
+Asset Name
   An asset name prefix that is added to the OPC UA variables retrieved from the OPC UA server
 
-url
-  The URL used to connect the server, of the form opc.tcp://<hostname>:<port>/...
+OPCUA Server URL
+  The URL used to connect the server, of the form *opc.tcp://<hostname>:<port>/...*
 
-subscribeById
-  A toggle that determines of the subscriptions are to be treated as
-  OPC UA node names or as browse names.
-
-subscriptions
+OPCUA Object Subscriptions
   An array of OPC UA node names that will control the subscription to
   variables in the OPC UA server.
 
@@ -55,51 +53,52 @@ browsing the given OPC UA server using OPC UA clients, such as UaExpert
 
 https://www.unified-automation.com/downloads/opc-ua-clients.html
 
-Most examples come from Object in ProSys OPC UA simulation server:
+Most examples come from the Simulation Object in the Prosys OPC UA Simulation Server:
 
 https://www.prosysopc.com/products/opc-ua-simulation-server/
 
-reportingInterval
+Min Reporting Interval
   The minimum reporting interval for data change notifications
 
-securityMode
-  Security mode to use while connecting to OPCUA server. Options are "None", "Sign" & "SignAndEncrypt".
+Security Mode
+  Security mode to use while connecting to OPCUA server. Options are "None", "Sign" & "SignAndEncrypt."
 
-securityPolicy
-  Security policy to use while connecting to OPCUA server. Options are "None", "Basic256" & "Basic256Sha256".
+Security Policy
+  Security policy to use while connecting to OPCUA server. Options are "None", "Basic256" & "Basic256Sha256."
 
-userAuthPolicy
-  User authentication policy to use while connecting to OPCUA server. Supported values are "anonymous" & "username".
+User Authentication Policy
+  User authentication policy to use while connecting to OPCUA server. Supported values are "anonymous" & "username."
 
-username
-  Username to use when userAuthPolicy is set to "username".
+Username
+  Username to use when userAuthPolicy is set to "username."
 
-password
-  Password to use when userAuthPolicy is set to "username".
+Password
+  Password to use when userAuthPolicy is set to "username."
 
-caCert
-  CA certificate authority file path in DER format. Applicable when securityMode is "Sign" or "SignAndEncrypt".
+CA Certificate Authority
+  CA Certificate Authority file path in DER format. Applicable when securityMode is "Sign" or "SignAndEncrypt."
 
-serverCert
-  Server certificate file path in DER format. Applicable when securityMode is "Sign" or "SignAndEncrypt".
+Server Public Certificate
+  Server certificate file path in DER format. Applicable when securityMode is "Sign" or "SignAndEncrypt."
 
-clientCert
-  Client certificate file path in DER format. Applicable when securityMode is "Sign" or "SignAndEncrypt".
+Client Public Certificate
+  Client certificate file path in DER format. Applicable when securityMode is "Sign" or "SignAndEncrypt."
 
-clientKey
-  Client private key file path in DER format. Applicable when securityMode is "Sign" or "SignAndEncrypt".
+Client Private Key
+  Client private key file path in PEM format. Applicable when securityMode is "Sign" or "SignAndEncrypt."
 
-caCrl
-  Certificate Revocation List in DER format. Applicable when securityMode is "Sign" or "SignAndEncrypt".
+Certificate Revocation List
+  Certificate Revocation List in DER format. Applicable when securityMode is "Sign" or "SignAndEncrypt."
 
-
+Debug Trace File
+  Enable the S2OPCUA OPCUA Toolkit trace file for debugging. If enabled, log files will appear in the directory */usr/local/fledge/data/logs*.
 
 Building S2OPC
 ------------------
 
 To build S2OPC and its dependencies:
 
-* libmbedtls-dev
+* libmbedtls-dev:
 .. code-block:: console
 
   $ sudo apt-get install -y libmbedtls-dev
@@ -129,27 +128,37 @@ To build S2OPC and its dependencies:
 
   $ rm -f CMakeCache.txt ; mkdir -p build ; cd build; cmake .. && make -j4 && sudo make install; cd -
 
-* S2OPC
+* S2OPC:
 .. code-block:: console
 
   $ cd ~/dev
-  $ git clone https://gitlab.com/systerel/S2OPC.git --branch S2OPC_Toolkit_1.1.0
+  $ git clone https://gitlab.com/systerel/S2OPC.git
   $ git clone https://github.com/fledge-iot/fledge-south-s2opcua.git
-  $ cp fledge-south-s2opcua/S2OPC.patch S2OPC/
   $ cd S2OPC
-  $ git apply S2OPC.patch   # apply S2OPC code changes
+  $ cp ../fledge-south-s2opcua/S2OPC.patch .
+  $ git apply S2OPC.patch
+  $ cp ./src/Common/opcua_types/sopc_encodeabletype.h ../fledge-south-s2opcua/include
+  $ Make this change in ../fledge-south-s2opcua/include/sopc_encodeabletype.h:
+      * Locate the string: *typedef const struct SOPC_EncodeableType*
+      * Change it to: *typedef struct SOPC_EncodeableType* (that is, remove the *const*)
   $ BUILD_SHARED_LIBS=OFF; CMAKE_INSTALL_PREFIX=/usr/local; ./build.sh; echo; echo "BUILD done, INSTALLING..."; echo; cd build; sudo make install; cd -
 
-Alternatively run the script requirements.sh to automate this and place a copy of the S2OPC shared library and its dependencies in /usr/local/lib.
+Alternatively run the script *fledge-south-s2opcua/requirements.sh* to automate these steps.
+This includes placing a copy of the S2OPC shared library and its dependencies in */usr/local/lib*.
 
 .. code-block:: console
 
+  $ cd ~/dev/fledge-south-s2opcua
   $ ./requirements.sh
+  
+Note that you should set your default directory to your *fledge-south-s2opcua* directory before running *requirements.sh*.
+This script will create *libexpat*, *check-0.15.2* and *S2OPC* as sub-directories of *fledge-south-s2opcua*.
+This is different from the manual procedure above but will still result in the *S2OPC* libraries being placed in */usr/local/lib*.
 
 Build
 -----
 
-To build the opcua plugin run the commands:
+To build the OPC UA S2OPC South plugin run the commands:
 
 .. code-block:: console
 

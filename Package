@@ -3,7 +3,7 @@
 plugin_name=s2opcua
 plugin_type=south
 plugin_install_dirname=${plugin_name}
-additional_libs="usr/local/lib:/usr/local/lib/libs2opc_common.so,usr/local/lib:/usr/local/lib/libs2opc_clientserver.so,usr/local/lib:/usr/local/lib/libs2opc_clientwrapper.so,usr/local/lib:/usr/local/lib/libexpat.so.1"
+
 # Now build up the runtime requirements list. This has 3 components
 #   1. Generic packages we depend on in all architectures and package managers
 #   2. Architecture specific packages we depend on
@@ -20,7 +20,7 @@ case "$arch" in
 esac
 case "$package_manager" in
     deb)
-        requirements="${requirements},libmbedtls-dev"
+        requirements="${requirements},libmbedtls-dev,fledge-s2opcua"
         ;;
     rpm)
         echo "RPM Package building for ${plugin_name} is not supported on $arch architecture!!"

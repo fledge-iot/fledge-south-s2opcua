@@ -12,19 +12,23 @@
 #include <string>
 #include <reading.h>
 #include <logger.h>
+#include <utils.h>
 #include <mutex>
 #include <thread>
 #include <stdlib.h>
 #include <map>
 extern "C" {
+#include "sopc_logger.h"
+#include "libs2opc_common_config.h"
 #include "libs2opc_client_cmds.h"
+#include "sopc_logger.h"
 };
 
 class OpcUaClient;
 
 /* Lifetime Count of subscriptions */
 #define MAX_LIFETIME_COUNT 1000
-/* Number of targetted publish token */
+/* Number of targeted publish token */
 #define PUBLISH_N_TOKEN 2
 /* Connection global timeout */
 #define TIMEOUT_MS 10000
@@ -65,8 +69,9 @@ class OPCUA
         void        setClientCert(const std::string& cert) { m_clientPublic = cert; }
         void        setClientKey(const std::string& key) { m_clientPrivate = key; }
         void        setRevocationList(const std::string& cert) { m_caCrl = cert; }
+        void        setTraceFile(const std::string& traceFile);
 	void        dataChange(const char *nodeId, const SOPC_DataValue *value);
-	void	    disconnect();
+	void	    disconnect(const uint32_t connectionId);
 	void	    retry();
     private:
 
@@ -87,6 +92,7 @@ class OPCUA
     private:
         int         		subscribe();
 	void			browse(const std::string& nodeId, std::vector<std::string>&);
+    SOPC_ClientHelper_GetEndpointsResult *GetEndPoints(const char *endPointUrl);
 	std::string		securityMode(OpcUa_MessageSecurityMode mode);
 	std::string		nodeClass(OpcUa_NodeClass nodeClass);
 	int32_t			m_connectionId;
@@ -121,6 +127,7 @@ class OPCUA
         int                 	m_nodeIdsSize;
 		
         bool                 	m_disableCertVerif;
+        char                 	*m_traceFile;
         uint32_t             	m_maxKeepalive;
 	char			*m_path_cert_auth;
 	char			*m_path_crl;

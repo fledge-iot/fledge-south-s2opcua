@@ -1,7 +1,6 @@
 cmake_minimum_required(VERSION 2.6.0)
 
-# Set the plugin name to build
-project(s2opcua)
+project(RunTests)
 
 # Supported options:
 # -DFLEDGE_INCLUDE
@@ -18,8 +17,8 @@ set(CMAKE_CXX_FLAGS "-std=c++11 -O3")
 set_source_files_properties(version.h PROPERTIES GENERATED TRUE)
 add_custom_command(
   OUTPUT version.h
-  DEPENDS ${CMAKE_SOURCE_DIR}/VERSION
-  COMMAND ${CMAKE_SOURCE_DIR}/mkversion ${CMAKE_SOURCE_DIR}
+  DEPENDS ${CMAKE_SOURCE_DIR}/../VERSION
+  COMMAND ${CMAKE_SOURCE_DIR}/../mkversion ${CMAKE_SOURCE_DIR}/..
   COMMENT "Generating version header"
   VERBATIM
 )
@@ -29,13 +28,19 @@ include_directories(${CMAKE_BINARY_DIR})
 set(PLUGIN_TYPE "south")
 
 # Add here all needed Fledge libraries as list
-set(NEEDED_FLEDGE_LIBS common-lib)
+set(NEEDED_FLEDGE_LIBS common-lib services-common-lib)
+
+set(BOOST_COMPONENTS system thread)
+
+find_package(Boost 1.53.0 COMPONENTS ${BOOST_COMPONENTS} REQUIRED)
+include_directories(SYSTEM ${Boost_INCLUDE_DIR})
 
 # Find source files
-file(GLOB SOURCES *.cpp)
+file(GLOB SOURCES ../*.cpp)
+file(GLOB unittests "*.cpp")
 
 # Find Fledge includes and libs, by including FindFledge.cmak file
-set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} ${CMAKE_CURRENT_SOURCE_DIR})
+set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} ${CMAKE_CURRENT_SOURCE_DIR}/..)
 find_package(Fledge)
 # If errors: make clean and remove Makefile
 if (NOT FLEDGE_FOUND)
@@ -48,10 +53,6 @@ if (NOT FLEDGE_FOUND)
 endif()
 # On success, FLEDGE_INCLUDE_DIRS and FLEDGE_LIB_DIRS variables are set 
 
-# if(NOT S2OPC_COMMON_DEFS_SET)
-#   include(../../CommonDefs.cmake)
-# endif()
-
 # Find the S2OPC library source tree
 if (NOT "$ENV{S2OPC}" STREQUAL "")
 	set(OPCUADIR $ENV{S2OPC})
@@ -60,32 +61,11 @@ else()
 endif()
 message("OPCUADIR: ${OPCUADIR}")
 
-# Add ./include
-include_directories(include)
-# Add Fledge include dir(s)
-include_directories(${FLEDGE_INCLUDE_DIRS})
-
 include_directories(/usr/local/include/s2opc/common)
 include_directories(/usr/local/include/s2opc/clientserver)
 include_directories(/usr/local/include/s2opc/clientserver/frontend)
 
-# Add Fledge lib path
-link_directories(${FLEDGE_LIB_DIRS})
-
-# Add additional link directories
-# We assume the 'S2OPC' libraries are available here: 
-link_directories(/usr/local/lib)
-
-set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_STATIC_LINKER_FLAGS} -Wl,--no-as-needed")
-
-# Create shared library
-add_library(${PROJECT_NAME} SHARED ${SOURCES} version.h)
-
-# Add Fledge library names
-target_link_libraries(${PROJECT_NAME} ${NEEDED_FLEDGE_LIBS})
-
-# Add additional libraries
-target_link_libraries(${PROJECT_NAME} -lpthread -ldl)
+# Add any plugin specific libraries
 
 # Add S2OPC libraries
 find_library(S2OPC_COMMON s2opc_common ${OPCUADIR}/build/lib)
@@ -116,18 +96,27 @@ if (NOT S2OPC_COMMONWRAPPER)
         return()
 endif()
 
-message("S2OPC_COMMON: ${S2OPC_COMMON}")
-message("S2OPC_CLIENTSERVER: ${S2OPC_CLIENTSERVER}")
-message("S2OPC_CLIENTWRAPPER: ${S2OPC_CLIENTWRAPPER}")
-message("S2OPC_COMMONWRAPPER: ${S2OPC_COMMONWRAPPER}")
-target_link_libraries(${PROJECT_NAME} ${S2OPC_COMMON} ${S2OPC_CLIENTSERVER} ${S2OPC_CLIENTWRAPPER} ${S2OPC_COMMONWRAPPER})
 
-target_compile_options(${PROJECT_NAME} PRIVATE ${S2OPC_COMPILER_FLAGS})
-target_compile_definitions(${PROJECT_NAME} PRIVATE ${S2OPC_DEFINITIONS})
+# Locate GTest
+find_package(GTest REQUIRED)
+include_directories(${GTEST_INCLUDE_DIRS})
 
+# Add ../include
+include_directories(../include)
+# Add Fledge include dir(s)
+include_directories(${FLEDGE_INCLUDE_DIRS})
 
-# Set the build version 
-set_target_properties(${PROJECT_NAME} PROPERTIES SOVERSION 1)
+# Add other include paths
+
+# Add Fledge lib path
+link_directories(${FLEDGE_LIB_DIRS})
+
+# Link runTests with what we want to test and the GTest and pthread library
+add_executable(RunTests ${unittests} ${SOURCES} version.h)
+
+# Add additional libraries
+
+# Add additional link directories
 
 set(FLEDGE_INSTALL "" CACHE INTERNAL "")
 # Install library
@@ -135,3 +124,19 @@ if (FLEDGE_INSTALL)
 	message(STATUS "Installing ${PROJECT_NAME} in ${FLEDGE_INSTALL}/plugins/${PLUGIN_TYPE}/${PROJECT_NAME}")
 	install(TARGETS ${PROJECT_NAME} DESTINATION ${FLEDGE_INSTALL}/plugins/${PLUGIN_TYPE}/${PROJECT_NAME})
 endif()
+
+message("S2OPC_COMMON: ${S2OPC_COMMON}")
+message("S2OPC_CLIENTSERVER: ${S2OPC_CLIENTSERVER}")
+message("S2OPC_CLIENTWRAPPER: ${S2OPC_CLIENTWRAPPER}")
+message("S2OPC_COMMONWRAPPER: ${S2OPC_COMMONWRAPPER}")
+
+target_link_libraries(${PROJECT_NAME} ${S2OPC_COMMON} ${S2OPC_CLIENTSERVER} ${S2OPC_CLIENTWRAPPER} ${S2OPC_COMMONWRAPPER})
+
+target_compile_options(${PROJECT_NAME} PRIVATE ${S2OPC_COMPILER_FLAGS})
+target_compile_definitions(${PROJECT_NAME} PRIVATE ${S2OPC_DEFINITIONS})
+
+
+target_link_libraries(RunTests ${GTEST_LIBRARIES} pthread)
+target_link_libraries(RunTests ${NEEDED_FLEDGE_LIBS})
+target_link_libraries(RunTests  ${Boost_LIBRARIES})
+target_link_libraries(RunTests -lpthread -ldl)
