@@ -16,6 +16,7 @@
 #include <mutex>
 #include <thread>
 #include <stdlib.h>
+#include <sys/time.h>
 #include <map>
 extern "C" {
 #include "sopc_logger.h"
@@ -137,6 +138,8 @@ class OPCUA
 	bool			m_stopped;
 	std::thread		*m_background;
 	bool			m_init;
+	std::map<std::string, struct timeval>
+				m_lastIngest;
 };
 
 #endif
