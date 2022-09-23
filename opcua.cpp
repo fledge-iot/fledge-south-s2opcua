@@ -178,6 +178,23 @@ DatapointValue* dpv = NULL;
 		m_background = NULL;
 	}
 	Logger::getLogger()->debug("Data change call for Node %s", nodeId);
+
+	// Enforce minimum reporting interval in software
+	struct timeval now;
+	gettimeofday(&now, NULL);
+	auto it = m_lastIngest.find(nodeId);
+	if (it != m_lastIngest.end())
+	{
+		struct timeval lastIngest = it->second;
+		struct timeval diff;
+		timersub(&now, &lastIngest, &diff);
+		long ms = diff.tv_sec * 1000 + (diff.tv_usec / 1000);
+		if (ms < m_reportingInterval)
+		{
+			Logger::getLogger()->debug("Ingest of %s too soon after last ingest, as defined by minimum reporting interval", nodeId);
+			return;
+		}
+	}
 	if (value)
 	{
 		SOPC_Variant variant = value->Value;
@@ -270,6 +287,15 @@ DatapointValue* dpv = NULL;
 			points.push_back(new Datapoint(dpname, *dpv));
 			ingest(points, 0);
 		}
+	}
+
+	if (it != m_lastIngest.end())
+	{
+		it->second = now;
+	}
+	else
+	{
+		m_lastIngest[nodeId] = now;
 	}
 }
 
