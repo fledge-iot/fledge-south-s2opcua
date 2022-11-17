@@ -15,6 +15,7 @@
 #include <map>
 #include <unistd.h>
 #include <chrono>
+#include <math.h>
 
 using namespace std;
 
@@ -170,7 +171,7 @@ static void FreeEndpointCollection(SOPC_ClientHelper_GetEndpointsResult *endpoin
  */
 void OPCUA::dataChange(const char *nodeId, const SOPC_DataValue *value)
 {
-DatapointValue* dpv = NULL;
+	DatapointValue* dpv = NULL;
 
 	if (m_background && m_background->joinable())	// Collect the background thread
 	{
@@ -197,6 +198,7 @@ DatapointValue* dpv = NULL;
 	}
 	if (value)
 	{
+
 		SOPC_Variant variant = value->Value;
 		if (variant.ArrayType == SOPC_VariantArrayType_SingleValue)
 		{
@@ -285,7 +287,18 @@ DatapointValue* dpv = NULL;
 				dpname.erase(pos, 1);
 			}
 			points.push_back(new Datapoint(dpname, *dpv));
+
+                        SOPC_DateTime srcTimestamp = value->SourceTimestamp;
+                        time_t seconds;
+                        if (SOPC_Time_ToTimeT(srcTimestamp, &seconds) == SOPC_STATUS_OK)
+                        {
+                       		double TimeAsSecondsFloat = ((double) srcTimestamp) / 1.0E7;         // divide by 100 nanoseconds
+                                double integerPart = 0.0;
+                                m_userts.tv_sec = seconds;
+                                m_userts.tv_usec = (suseconds_t) (1E6 * modf(TimeAsSecondsFloat, &integerPart));
+                        }
 			ingest(points, 0);
+
 		}
 	}
 
@@ -989,7 +1002,7 @@ void OPCUA::ingest(vector<Datapoint *> points, long user_ts)
 string asset = m_asset + points[0]->getName();
 
     Reading rdng(asset, points);
-    // rdng.setUserTimestamp(user_ts);
+    rdng.setUserTimestamp(m_userts);
     (*m_ingest)(m_data, rdng);
 }
 
@@ -1256,4 +1269,3 @@ string OPCUA::nodeClass(OpcUa_NodeClass nodeClass)
 	}
 	return string("Unknown");
 }
-

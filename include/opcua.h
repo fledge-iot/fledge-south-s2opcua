@@ -23,6 +23,7 @@ extern "C" {
 #include "libs2opc_common_config.h"
 #include "libs2opc_client_cmds.h"
 #include "sopc_logger.h"
+#include "sopc_time.h"
 };
 
 class OpcUaClient;
@@ -122,6 +123,7 @@ class OPCUA
         std::string            	m_clientPrivate;
         std::string            	m_certAuth;
         std::string            	m_caCrl;
+	struct timeval		m_userts;
         
         int64_t             	m_publishPeriod;
         uint16_t             	m_tokenTarget;
