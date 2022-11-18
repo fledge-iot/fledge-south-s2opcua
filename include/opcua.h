@@ -23,6 +23,7 @@ extern "C" {
 #include "libs2opc_common_config.h"
 #include "libs2opc_client_cmds.h"
 #include "sopc_logger.h"
+#include "sopc_time.h"
 };
 
 class OpcUaClient;
@@ -53,7 +54,7 @@ class OPCUA
         void        newURL(const std::string& url) { m_url = url; };
         void        start();
         void        stop();
-        void        ingest(std::vector<Datapoint *> points, long user_ts);
+        void        ingest(std::vector<Datapoint *> points, const timeval& user_ts);
         void        setReportingInterval(long value);
         void        registerIngest(void *data, void (*cb)(void *, Reading))
                 {
