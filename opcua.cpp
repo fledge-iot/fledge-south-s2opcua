@@ -290,14 +290,15 @@ void OPCUA::dataChange(const char *nodeId, const SOPC_DataValue *value)
 
                         SOPC_DateTime srcTimestamp = value->SourceTimestamp;
                         time_t seconds;
+			struct timeval tm_userts;
                         if (SOPC_Time_ToTimeT(srcTimestamp, &seconds) == SOPC_STATUS_OK)
                         {
                        		double TimeAsSecondsFloat = ((double) srcTimestamp) / 1.0E7;         // divide by 100 nanoseconds
                                 double integerPart = 0.0;
-                                m_userts.tv_sec = seconds;
-                                m_userts.tv_usec = (suseconds_t) (1E6 * modf(TimeAsSecondsFloat, &integerPart));
+                                tm_userts.tv_sec = seconds;
+                                tm_userts.tv_usec = (suseconds_t) (1E6 * modf(TimeAsSecondsFloat, &integerPart));
                         }
-			ingest(points, 0);
+			ingest(points, tm_userts);
 
 		}
 	}
@@ -997,12 +998,12 @@ OPCUA::stop()
  *
  * @param points    The points in the reading we must create
  */
-void OPCUA::ingest(vector<Datapoint *> points, long user_ts)
+void OPCUA::ingest(vector<Datapoint *> points, const timeval &user_ts)
 {
 string asset = m_asset + points[0]->getName();
 
     Reading rdng(asset, points);
-    rdng.setUserTimestamp(m_userts);
+    rdng.setUserTimestamp(user_ts);
     (*m_ingest)(m_data, rdng);
 }
 

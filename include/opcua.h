@@ -54,7 +54,7 @@ class OPCUA
         void        newURL(const std::string& url) { m_url = url; };
         void        start();
         void        stop();
-        void        ingest(std::vector<Datapoint *> points, long user_ts);
+        void        ingest(std::vector<Datapoint *> points, const timeval& user_ts);
         void        setReportingInterval(long value);
         void        registerIngest(void *data, void (*cb)(void *, Reading))
                 {
@@ -123,7 +123,6 @@ class OPCUA
         std::string            	m_clientPrivate;
         std::string            	m_certAuth;
         std::string            	m_caCrl;
-	struct timeval		m_userts;
         
         int64_t             	m_publishPeriod;
         uint16_t             	m_tokenTarget;
