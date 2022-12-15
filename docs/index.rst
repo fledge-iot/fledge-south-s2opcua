@@ -3,6 +3,7 @@
 .. |opcua_2| image:: images/opcua_2.jpg
 .. |opcua_3| image:: images/opcua_3.jpg
 .. |opcua_4| image:: images/opcua_4.jpg
+.. |opcua_5| image:: images/opcua_5.jpg
 .. |certstore| image:: images/certificatestore-import.jpg
 
 .. |UaExpert| raw:: html
@@ -49,6 +50,10 @@ The configuration parameters that can be set on this page are;
   - **Min Reporting Interval**: This control the minimum interval between reports of data changes in subscriptions. It sets an upper limit to the rate that data will be ingested into the plugin and is expressed in milliseconds.
 
   - **Asset Naming Scheme**: The plugin can ingest data into a number of different assets based on the selection of the asset naming scheme
+
+    +-----------+
+    | |opcua_5| |
+    +-----------+
 
      - *Single datapoint* An asset will be created for each variable read from the OPC/UA server. The asset will contain a single datapoint whose name will be taken from the browse name of the variable read. The asset name will be created by appending the browse name of the variable to the fixed asset name prefix defined int he *Asset Name* configuration option above.
 

@@ -953,6 +953,7 @@ Logger	*logger = Logger::getLogger();
 		logger->info("Successfully connected to OPC/UA Server: %s", m_url.c_str());
 		subscribe();
 		getParents();
+		resolveDuplicateBrowseNames();
 	}
 	else
 	{
@@ -1156,6 +1157,16 @@ SOPC_DataValue values[3];
 }
 
 /**
+ * We have detected two browse names that are the same. Resolve this
+ * by adding the nodeID to the browse name.
+ */
+void OPCUA::Node::duplicateBrowseName()
+{
+	m_browseName.append(".");
+	m_browseName.append(m_nodeID);
+}
+
+/**
  * Browse a node and add to the subscription list if it is a variable.
  * If it is a FolderType then recurse down the child nodes
  *
@@ -1343,5 +1354,35 @@ void OPCUA::setAssetNaming(const string& scheme)
 	else
 	{
 		m_assetNaming = ASSET_NAME_SINGLE;
+	}
+}
+
+/**
+ * Resolve duplicate browse names within nodes, if the naming
+ * scheme we are using includes the parent object name in the
+ * naming we ignore duplicates as they are always going to have
+ * different parent nodes.
+ */
+void OPCUA::resolveDuplicateBrowseNames()
+{
+	if (m_assetNaming == ASSET_NAME_SINGLE_OBJ || m_assetNaming == ASSET_NAME_OBJECT)
+	{
+		return;
+	}
+	for (auto it = m_nodes.begin(); it != m_nodes.end(); ++it)
+	{
+		string b1 = it->second->getBrowseName();
+		auto it2 = ++it;
+		it--;
+		while (it2 != m_nodes.end())
+		{
+			string b2 = it2->second->getBrowseName();
+			if (b1.compare(b2) == 0)
+			{
+				it->second->duplicateBrowseName();
+				it2->second->duplicateBrowseName();
+			}
+			it2++;
+		}
 	}
 }

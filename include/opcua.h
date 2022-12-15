@@ -86,6 +86,7 @@ class OPCUA
 				uint32_t	getType() { return m_type; };
 				std::string	getNodeId() { return m_nodeID; };
 				OpcUa_NodeClass	getNodeClass() { return m_nodeClass; };
+				void		duplicateBrowseName();
 		private:
 				const std::string	m_nodeID;
 				std::string		m_browseName;
@@ -99,6 +100,7 @@ class OPCUA
 				*GetEndPoints(const char *endPointUrl);
 	std::string		securityMode(OpcUa_MessageSecurityMode mode);
 	std::string		nodeClass(OpcUa_NodeClass nodeClass);
+	void			resolveDuplicateBrowseNames();
 	void			getParents();
 	int32_t			m_connectionId;
 	int32_t			m_configurationId;
