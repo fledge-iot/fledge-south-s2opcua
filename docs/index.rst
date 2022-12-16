@@ -55,11 +55,11 @@ The configuration parameters that can be set on this page are;
     | |opcua_5| |
     +-----------+
 
-     - *Single datapoint* An asset will be created for each variable read from the OPC/UA server. The asset will contain a single datapoint whose name will be taken from the browse name of the variable read. The asset name will be created by appending the browse name of the variable to the fixed asset name prefix defined int he *Asset Name* configuration option above.
+     - *Single datapoint* An asset will be created for each variable read from the OPC/UA server. The asset will contain a single datapoint whose name will be taken from the browse name of the variable read. The asset name will be created by appending the browse name of the variable to the fixed asset name prefix defined in the *Asset Name* configuration option above.
 
      - *Single datapoint object prefix* An asset will be created for each variable read from the OPC/UA server. The asset will contain a single datapoint whose name will be taken from the browse name of the variable read. The asset name will be created by appending the browse name of the variable to the browse name of the variables parent object.
 
-     - *Asset per object* An asset will be created for each OPC/UA object that is subscribed to. That asset will be names using the browse name of the OPC/UA object and will contain a datapoint per variable within the OPC/UA object. The name of the datapoint will be the browse name of the variable.
+     - *Asset per object* An asset will be created for each OPC/UA object that is subscribed to. That asset will be named using the browse name of the OPC/UA object and will contain a datapoint per variable within the OPC/UA object. The name of the datapoint will be the browse name of the variable.
 
      - *Single asset* A single asset will be created with all the variables read from the OPC/UA server as datapoints within that asset. The asset name will be taken from the *Asset Name* configuration item and the datapoint name from the browse name of the OPC/UA variable.
 
