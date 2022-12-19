@@ -65,6 +65,8 @@ The configuration parameters that can be set on this page are;
 
      When an asset is created that has multiple datapoints within it, all datapoints may not be included in any single reading as the plugin only gets data that has changed since the last reading has been taken.
 
+     The plugin uses the browse names of the OPC/UA variables to name the datapoints with an asset, there is no requirement for the browse names to be unique, the plugin resolves this by detecting duplicates browse names and if one is found appending the node ID to the browse name to create a unique datapoint name. This is important for both *Single datapoint* and *Single Asset* modes as in the first case the asset name is the same as the datapoint name and is global for all OPC/UA variables that are monitored. The result of this would be that the same asset name and datapoint name would be used to store multiple OPC/UA variables. In the case of *Single Asset* mode the datapoints names are kept within a single asset and hence an error would occur if two datapoints had the same name.
+
     +-----------+
     | |opcua_2| |
     +-----------+
