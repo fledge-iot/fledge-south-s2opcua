@@ -271,7 +271,7 @@ void OPCUA::dataChange(const char *nodeId, const SOPC_DataValue *value)
 			Logger::getLogger()->error("Node %s: Unable to determine array type", nodeId);
 		}
 
-    	if (dpv)
+		if (dpv)
 		{
 			vector<Datapoint *>    points;
 			string dpname = nodeId;
@@ -298,7 +298,14 @@ void OPCUA::dataChange(const char *nodeId, const SOPC_DataValue *value)
                                 tm_userts.tv_sec = seconds;
                                 tm_userts.tv_usec = (suseconds_t) (1E6 * modf(TimeAsSecondsFloat, &integerPart));
                         }
-			ingest(points, tm_userts);
+
+			string parent = "noParent";
+			auto p = m_parentNodes.find(nodeId);
+			if (p != m_parentNodes.end())
+			{
+				parent = p->second->getBrowseName();
+			}
+			ingest(points, tm_userts, parent);
 
 		}
 	}
@@ -330,7 +337,8 @@ OPCUA::OPCUA(const string& url) : m_url(url),
 				m_stopped(false),
 				m_background(NULL),
 				m_init(false),
-				m_traceFile(NULL)
+				m_traceFile(NULL),
+				m_assetNaming(ASSET_NAME_SINGLE)
 {
 	opcua = this;
 }
@@ -550,6 +558,24 @@ Logger *logger = Logger::getLogger();
 }
 
 
+/**
+ * Create nodes for all the parents of the node we subscribe to
+ */
+void
+OPCUA::getParents()
+{
+	for (auto it = m_parents.cbegin(); it != m_parents.cend(); it++)
+	{
+		try {
+			Node *node = new Node(m_connectionId, it->second);
+			m_parentNodes.insert(pair<string, Node *>(it->first, node));
+		} catch (...) {
+			Logger::getLogger()->error("Failed to find parent node with nodeId %s",
+					it->first.c_str());
+			// Ignore
+		}
+	 }
+}
 
 
 /**
@@ -926,6 +952,8 @@ Logger	*logger = Logger::getLogger();
 	{
 		logger->info("Successfully connected to OPC/UA Server: %s", m_url.c_str());
 		subscribe();
+		getParents();
+		resolveDuplicateBrowseNames();
 	}
 	else
 	{
@@ -997,14 +1025,31 @@ OPCUA::stop()
  * and adds the points to the readings queue to send.
  *
  * @param points    The points in the reading we must create
+ * @param ts	    The timestamp of the data
+ * @param object    The name of the parent object
  */
-void OPCUA::ingest(vector<Datapoint *> points, const timeval &user_ts)
+void OPCUA::ingest(vector<Datapoint *> points, const timeval &user_ts, const string& object)
 {
 string asset = m_asset + points[0]->getName();
 
-    Reading rdng(asset, points);
-    rdng.setUserTimestamp(user_ts);
-    (*m_ingest)(m_data, rdng);
+	switch (m_assetNaming)
+	{
+		case ASSET_NAME_SINGLE:
+			asset = m_asset + points[0]->getName();
+			break;
+		case ASSET_NAME_SINGLE_OBJ:
+			asset = object + points[0]->getName();
+			break;
+		case ASSET_NAME_OBJECT:
+			asset = object;
+			break;
+		case ASSET_NAME:
+			asset = m_asset;
+			break;
+	}
+	Reading rdng(asset, points);
+	rdng.setUserTimestamp(user_ts);
+	(*m_ingest)(m_data, rdng);
 }
 
 /**
@@ -1112,6 +1157,16 @@ SOPC_DataValue values[3];
 }
 
 /**
+ * We have detected two browse names that are the same. Resolve this
+ * by adding the nodeID to the browse name.
+ */
+void OPCUA::Node::duplicateBrowseName()
+{
+	m_browseName.append(".");
+	m_browseName.append(m_nodeID);
+}
+
+/**
  * Browse a node and add to the subscription list if it is a variable.
  * If it is a FolderType then recurse down the child nodes
  *
@@ -1155,6 +1210,7 @@ void OPCUA::browse(const string& nodeid, vector<string>& variables)
 		if (browseResult.references[i].nodeClass == OpcUa_NodeClass_Variable)
 		{
 			variables.push_back(browseResult.references[i].nodeId);
+			m_parents.insert(pair<string, string>(browseResult.references[i].nodeId, nodeid));
 		}
 		Logger::getLogger()->debug("Item #%d: NodeId %s, displayName %s, nodeClass %s",
 			       	i, browseResult.references[i].nodeId,
@@ -1269,4 +1325,64 @@ string OPCUA::nodeClass(OpcUa_NodeClass nodeClass)
 			return string("SizeOf");
 	}
 	return string("Unknown");
+}	
+
+/**
+ * Set the desired asset naming scheme from the configuration
+ * item
+ *
+ * @param scheme	Required asset naming scheme
+ */
+void OPCUA::setAssetNaming(const string& scheme)
+{
+	if (scheme.compare("Single datapoint") == 0)
+	{
+		m_assetNaming = ASSET_NAME_SINGLE;
+	}
+	else if (scheme.compare("Single datapoint object prefix") == 0)
+	{
+		m_assetNaming = ASSET_NAME_SINGLE_OBJ;
+	}
+	else if (scheme.compare("Asset per object") == 0)
+	{
+		m_assetNaming = ASSET_NAME_OBJECT;
+	}
+	else if (scheme.compare("Single asset") == 0)
+	{
+		m_assetNaming = ASSET_NAME;
+	}
+	else
+	{
+		m_assetNaming = ASSET_NAME_SINGLE;
+	}
+}
+
+/**
+ * Resolve duplicate browse names within nodes, if the naming
+ * scheme we are using includes the parent object name in the
+ * naming we ignore duplicates as they are always going to have
+ * different parent nodes.
+ */
+void OPCUA::resolveDuplicateBrowseNames()
+{
+	if (m_assetNaming == ASSET_NAME_SINGLE_OBJ || m_assetNaming == ASSET_NAME_OBJECT)
+	{
+		return;
+	}
+	for (auto it = m_nodes.begin(); it != m_nodes.end(); ++it)
+	{
+		string b1 = it->second->getBrowseName();
+		auto it2 = ++it;
+		it--;
+		while (it2 != m_nodes.end())
+		{
+			string b2 = it2->second->getBrowseName();
+			if (b1.compare(b2) == 0)
+			{
+				it->second->duplicateBrowseName();
+				it2->second->duplicateBrowseName();
+			}
+			it2++;
+		}
+	}
 }
