@@ -35,7 +35,7 @@ void parse_config(OPCUA *opcua, ConfigCategory &config, bool reconf);
  */
 static const char *default_config = QUOTE({
     "plugin" : {
-           "description" : "Simple OPC UA data change plugin",
+           "description" : "Safe & Secure OPC UA data change plugin",
             "type" : "string",
             "default" : PLUGIN_NAME,
             "readonly" : "true"
@@ -52,14 +52,14 @@ static const char *default_config = QUOTE({
             "description" : "URL of the OPC UA Server",
             "type" : "string",
             "default" : "opc.tcp://localhost:53530/OPCUA/SimulationServer",
-            "displayName" : "OPCUA Server URL",
+            "displayName" : "OPC UA Server URL",
             "order" : "2"
             },
     "subscription" : {
             "description" : "Variables to observe changes in",
             "type" : "JSON",
             "default" : "{ \"subscriptions\" : [  \"ns=3;i=1001\", \"ns=3;i=1002\" ] }",
-            "displayName" : "OPCUA Object Subscriptions",
+            "displayName" : "OPC UA Object Subscriptions",
             "order" : "3"
             },
     "reportingInterval" : {
@@ -83,7 +83,7 @@ static const char *default_config = QUOTE({
             "options":["None", "Sign", "SignAndEncrypt"],
             "default" : "None",
             "displayName" : "Security Mode",
-	    "group" : "OPCUA Security",
+	    "group" : "OPC UA Security",
             "order" : "7"
             },
     "securityPolicy" : {
@@ -93,7 +93,7 @@ static const char *default_config = QUOTE({
             "default" : "None",
             "displayName" : "Security Policy",
             "order" : "8",
-	    "group" : "OPCUA Security",
+	    "group" : "OPC UA Security",
             "validity": " securityMode == \"Sign\" || securityMode == \"SignAndEncrypt\" "
             },
     "userAuthPolicy" : {
@@ -102,7 +102,7 @@ static const char *default_config = QUOTE({
             "options":["anonymous", "username"],
             "default" : "anonymous",
             "displayName" : "User Authentication Policy",
-	    "group" : "OPCUA Security",
+	    "group" : "OPC UA Security",
             "order" : "9"
             },
     "username" : {
@@ -111,7 +111,7 @@ static const char *default_config = QUOTE({
             "default" : "",
             "displayName" : "Username",
             "order" : "10",
-	    "group" : "OPCUA Security",
+	    "group" : "OPC UA Security",
             "validity": " userAuthPolicy == \"username\" "
             },
     "password" : {
@@ -120,7 +120,7 @@ static const char *default_config = QUOTE({
             "default" : "",
             "displayName" : "Password",
             "order" : "11",
-	    "group" : "OPCUA Security",
+	    "group" : "OPC UA Security",
             "validity": " userAuthPolicy == \"username\" "
             },
     "caCert" : {
@@ -129,7 +129,7 @@ static const char *default_config = QUOTE({
             "default" : "",
             "displayName" : "CA Certificate Authority",
             "order" : "12",
-	    "group" : "OPCUA Security",
+	    "group" : "OPC UA Security",
             "validity": " securityMode == \"Sign\" || securityMode == \"SignAndEncrypt\" "
             },
     "serverCert" : {
@@ -138,7 +138,7 @@ static const char *default_config = QUOTE({
             "default" : "",
             "displayName" : "Server Public Certificate",
             "order" : "13",
-	    "group" : "OPCUA Security",
+	    "group" : "OPC UA Security",
             "validity": " securityMode == \"Sign\" || securityMode == \"SignAndEncrypt\" "
             },
     "clientCert" : {
@@ -147,7 +147,7 @@ static const char *default_config = QUOTE({
             "default" : "",
             "displayName" : "Client Public Certificate",
             "order" : "14",
-	    "group" : "OPCUA Security",
+	    "group" : "OPC UA Security",
             "validity": " securityMode == \"Sign\" || securityMode == \"SignAndEncrypt\" "
             },
     "clientKey" : {
@@ -156,7 +156,7 @@ static const char *default_config = QUOTE({
             "default" : "",
             "displayName" : "Client Private Key",
             "order" : "15",
-	    "group" : "OPCUA Security",
+	    "group" : "OPC UA Security",
             "validity": " securityMode == \"Sign\" || securityMode == \"SignAndEncrypt\" "
             },
     "caCrl" : {
@@ -165,7 +165,7 @@ static const char *default_config = QUOTE({
             "default" : "",
             "displayName" : "Certificate Revocation List",
             "order" : "16",
-	    "group" : "OPCUA Security",
+	    "group" : "OPC UA Security",
             "validity": " securityMode == \"Sign\" || securityMode == \"SignAndEncrypt\" "
             },
     "traceFile" : {
@@ -173,7 +173,7 @@ static const char *default_config = QUOTE({
             "type" : "boolean",
             "default" : "false",
             "displayName" : "Debug Trace File",
-	    "group" : "Advanced",
+	    "group" : "OPC UA Advanced",
             "order" : "17"
             }
     });
