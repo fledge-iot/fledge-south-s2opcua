@@ -35,7 +35,7 @@ void parse_config(OPCUA *opcua, ConfigCategory &config, bool reconf);
  */
 static const char *default_config = QUOTE({
     "plugin" : {
-           "description" : "Simple OPC UA data change plugin",
+           "description" : "Safe & Secure OPC UA data change plugin",
             "type" : "string",
             "default" : PLUGIN_NAME,
             "readonly" : "true"
@@ -52,14 +52,14 @@ static const char *default_config = QUOTE({
             "description" : "URL of the OPC UA Server",
             "type" : "string",
             "default" : "opc.tcp://localhost:53530/OPCUA/SimulationServer",
-            "displayName" : "OPCUA Server URL",
+            "displayName" : "OPC UA Server URL",
             "order" : "2"
             },
     "subscription" : {
             "description" : "Variables to observe changes in",
             "type" : "JSON",
             "default" : "{ \"subscriptions\" : [  \"ns=3;i=1001\", \"ns=3;i=1002\" ] }",
-            "displayName" : "OPCUA Object Subscriptions",
+            "displayName" : "OPC UA Object Subscriptions",
             "order" : "3"
             },
     "reportingInterval" : {
@@ -69,13 +69,22 @@ static const char *default_config = QUOTE({
             "displayName" : "Min Reporting Interval (millisec)",
             "order" : "5"
             },
+    "assetNaming" : {
+            "description" : "The naming scheme to use for asset read from the OPCUA server. One or more assets can be created based on a fixed prefix or the OPCUA object names.",
+            "type" : "enumeration",
+	    "options" : [ "Single datapoint", "Single datapoint object prefix", "Asset per object", "Single asset" ],
+            "default" : "Single datapoint",
+            "displayName" : "Asset Naming Scheme",
+            "order" : "6"
+            },
     "securityMode" : {
             "description" : "Security Mode to use while connecting to OPCUA server" ,
             "type" : "enumeration",
             "options":["None", "Sign", "SignAndEncrypt"],
             "default" : "None",
             "displayName" : "Security Mode",
-            "order" : "6"
+	    "group" : "OPC UA Security",
+            "order" : "7"
             },
     "securityPolicy" : {
             "description" : "Security Policy to use while connecting to OPCUA server" ,
@@ -83,7 +92,8 @@ static const char *default_config = QUOTE({
             "options":["None", "Basic256", "Basic256Sha256"],
             "default" : "None",
             "displayName" : "Security Policy",
-            "order" : "7",
+            "order" : "8",
+	    "group" : "OPC UA Security",
             "validity": " securityMode == \"Sign\" || securityMode == \"SignAndEncrypt\" "
             },
     "userAuthPolicy" : {
@@ -92,14 +102,16 @@ static const char *default_config = QUOTE({
             "options":["anonymous", "username"],
             "default" : "anonymous",
             "displayName" : "User Authentication Policy",
-            "order" : "8"
+	    "group" : "OPC UA Security",
+            "order" : "9"
             },
     "username" : {
             "description" : "Username" ,
             "type" : "string",
             "default" : "",
             "displayName" : "Username",
-            "order" : "9",
+            "order" : "10",
+	    "group" : "OPC UA Security",
             "validity": " userAuthPolicy == \"username\" "
             },
     "password" : {
@@ -107,7 +119,8 @@ static const char *default_config = QUOTE({
             "type" : "password",
             "default" : "",
             "displayName" : "Password",
-            "order" : "10",
+            "order" : "11",
+	    "group" : "OPC UA Security",
             "validity": " userAuthPolicy == \"username\" "
             },
     "caCert" : {
@@ -115,7 +128,8 @@ static const char *default_config = QUOTE({
             "type" : "string",
             "default" : "",
             "displayName" : "CA Certificate Authority",
-            "order" : "11",
+            "order" : "12",
+	    "group" : "OPC UA Security",
             "validity": " securityMode == \"Sign\" || securityMode == \"SignAndEncrypt\" "
             },
     "serverCert" : {
@@ -123,7 +137,8 @@ static const char *default_config = QUOTE({
             "type" : "string",
             "default" : "",
             "displayName" : "Server Public Certificate",
-            "order" : "12",
+            "order" : "13",
+	    "group" : "OPC UA Security",
             "validity": " securityMode == \"Sign\" || securityMode == \"SignAndEncrypt\" "
             },
     "clientCert" : {
@@ -131,7 +146,8 @@ static const char *default_config = QUOTE({
             "type" : "string",
             "default" : "",
             "displayName" : "Client Public Certificate",
-            "order" : "13",
+            "order" : "14",
+	    "group" : "OPC UA Security",
             "validity": " securityMode == \"Sign\" || securityMode == \"SignAndEncrypt\" "
             },
     "clientKey" : {
@@ -139,7 +155,8 @@ static const char *default_config = QUOTE({
             "type" : "string",
             "default" : "",
             "displayName" : "Client Private Key",
-            "order" : "14",
+            "order" : "15",
+	    "group" : "OPC UA Security",
             "validity": " securityMode == \"Sign\" || securityMode == \"SignAndEncrypt\" "
             },
     "caCrl" : {
@@ -147,7 +164,8 @@ static const char *default_config = QUOTE({
             "type" : "string",
             "default" : "",
             "displayName" : "Certificate Revocation List",
-            "order" : "15",
+            "order" : "16",
+	    "group" : "OPC UA Security",
             "validity": " securityMode == \"Sign\" || securityMode == \"SignAndEncrypt\" "
             },
     "traceFile" : {
@@ -155,7 +173,8 @@ static const char *default_config = QUOTE({
             "type" : "boolean",
             "default" : "false",
             "displayName" : "Debug Trace File",
-            "order" : "16"
+	    "group" : "OPC UA Advanced",
+            "order" : "17"
             }
     });
 
@@ -223,6 +242,11 @@ void parse_config(OPCUA *opcua, ConfigCategory &config, bool reconf)
     if (config.itemExists("asset"))
     {
         opcua->setAssetName(config.getValue("asset"));
+    }
+
+    if (config.itemExists("assetNaming"))
+    {
+        opcua->setAssetNaming(config.getValue("assetNaming"));
     }
 
     if (config.itemExists("reportingInterval"))

@@ -23,6 +23,7 @@ extern "C" {
 #include "libs2opc_common_config.h"
 #include "libs2opc_client_cmds.h"
 #include "sopc_logger.h"
+#include "sopc_time.h"
 };
 
 class OpcUaClient;
@@ -53,7 +54,7 @@ class OPCUA
         void        newURL(const std::string& url) { m_url = url; };
         void        start();
         void        stop();
-        void        ingest(std::vector<Datapoint *> points, long user_ts);
+        void        ingest(std::vector<Datapoint *> points, const timeval& user_ts, const std::string& parent = "");
         void        setReportingInterval(long value);
         void        registerIngest(void *data, void (*cb)(void *, Reading))
                 {
@@ -71,6 +72,7 @@ class OPCUA
         void        setClientKey(const std::string& key) { m_clientPrivate = key; }
         void        setRevocationList(const std::string& cert) { m_caCrl = cert; }
         void        setTraceFile(const std::string& traceFile);
+        void        setAssetNaming(const std::string& scheme);
 	void        dataChange(const char *nodeId, const SOPC_DataValue *value);
 	void	    disconnect(const uint32_t connectionId);
 	void	    retry();
@@ -84,6 +86,7 @@ class OPCUA
 				uint32_t	getType() { return m_type; };
 				std::string	getNodeId() { return m_nodeID; };
 				OpcUa_NodeClass	getNodeClass() { return m_nodeClass; };
+				void		duplicateBrowseName();
 		private:
 				const std::string	m_nodeID;
 				std::string		m_browseName;
@@ -93,9 +96,12 @@ class OPCUA
     private:
         int         		subscribe();
 	void			browse(const std::string& nodeId, std::vector<std::string>&);
-    SOPC_ClientHelper_GetEndpointsResult *GetEndPoints(const char *endPointUrl);
+	SOPC_ClientHelper_GetEndpointsResult
+				*GetEndPoints(const char *endPointUrl);
 	std::string		securityMode(OpcUa_MessageSecurityMode mode);
 	std::string		nodeClass(OpcUa_NodeClass nodeClass);
+	void			resolveDuplicateBrowseNames();
+	void			getParents();
 	int32_t			m_connectionId;
 	int32_t			m_configurationId;
         std::vector<std::string>
@@ -140,6 +146,13 @@ class OPCUA
 	bool			m_init;
 	std::map<std::string, struct timeval>
 				m_lastIngest;
+	enum {
+		ASSET_NAME_SINGLE, ASSET_NAME_SINGLE_OBJ, ASSET_NAME_OBJECT, ASSET_NAME
+				} m_assetNaming;
+	std::map<std::string, std::string>
+				m_parents;	// Map variable node id to parent node id
+	std::map<std::string, Node *>
+				m_parentNodes;
 };
 
 #endif
