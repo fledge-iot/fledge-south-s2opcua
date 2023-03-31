@@ -83,12 +83,18 @@ On this tab a number of configuration parameters are available;
     | |opcua_2| |
     +-----------+
 
-The OPC UA Advanced tab allows advanced configuration parameters to be set, currently only one option is available.
+The OPC UA Advanced tab allows advanced configuration parameters to be set.
 
 +------------------+
 | |opcua_advanced| |
 +------------------+
 
+  - **Include Full OPC UA Path as meta data**: If enabled, the full OPC UA path will be added to every reading as a separate datapoint.
+    The path is constructed using the Browse Name of every Node in the path from the OPC UA standard *Objects* folder down to the subscribed Node.
+    The delimiter between path segments is the forward slash ("/").
+    The path always begins with a forward slash.
+    The path does not include the *Objects* folder or the subscribed Node.
+  - **Full OPC UA Path meta data name**: The data point name to use when adding the full OPC UA path to every reading. Default is *OPCUAPath*.
   - **Debug Trace File**: Enable the S2OPCUA OPCUA Toolkit trace file for debugging. If enabled, log files will appear in the directory */usr/local/fledge/data/logs*.
 
 The OPC UA Security tab contains a set of configuration items that is used for setting the security between the plugin and the OPC UA Server.
