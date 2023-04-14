@@ -300,6 +300,20 @@ void OPCUA::dataChange(const char *nodeId, const SOPC_DataValue *value)
 			{
 				parent = p->second->getBrowseName();
 			}
+
+			if (m_includePathAsMetadata)
+			{
+				try
+				{
+					dpv = new DatapointValue(m_fullPaths.at(nodeId));
+					points.push_back(new Datapoint(m_metaDataName, *dpv));
+				}
+				catch (...)
+				{
+					Logger::getLogger()->warn("Node %s: Full Path not found", nodeId);
+				}
+			}
+
 			ingest(points, tm_userts, parent);
 		}
 	}
@@ -364,6 +378,8 @@ void OPCUA::clear()
 	m_clientPrivate.clear();
 	m_caCrl.clear();
 	m_subscriptions.clear();
+	m_fullPaths.clear();
+	m_metaDataName.clear();
 	m_assetNaming = ASSET_NAME_SINGLE;
 	m_reportingInterval = 100;
 	m_secMode = OpcUa_MessageSecurityMode_Invalid;
@@ -493,6 +509,24 @@ void OPCUA::parseConfig(ConfigCategory &config)
 	if (config.itemExists("caCrl"))
 	{
 		setRevocationList(config.getValue("caCrl"));
+	}
+
+	m_includePathAsMetadata = false;
+	if (config.itemExists("parentPathMetadata"))
+	{
+		if (config.getValue("parentPathMetadata") == "true")
+		{
+			m_includePathAsMetadata = true;
+		}
+	}
+
+	if (config.itemExists("parentPath"))
+	{
+		m_metaDataName = config.getValue("parentPath");
+		if (m_metaDataName.size() == 0)
+		{
+			m_metaDataName.append("OPCUAPath");
+		}
 	}
 
 	if (config.itemExists("traceFile"))
@@ -687,6 +721,14 @@ int OPCUA::subscribe()
 			m_nodes.insert(pair<string, Node *>(variables[i], node));
 			logger->debug("Subscribe to Node %s, BrowseName %s", node->getNodeId().c_str(), node->getBrowseName().c_str());
 			node_ids[i++] = strdup((char *)it->c_str());
+
+			if (m_includePathAsMetadata)
+			{
+				std::string fullPath;
+				getNodeFullPath(node->getNodeId(), fullPath);
+				logger->debug("Path to Node %s [%s]", node->getNodeId().c_str(), fullPath.c_str());
+				m_fullPaths.insert(std::pair<std::string,std::string>(node->getNodeId(), fullPath));
+			}
 		}
 		catch (...)
 		{
@@ -740,6 +782,59 @@ void OPCUA::getParents()
 			// Ignore
 		}
 	}
+}
+
+/**
+ * Get the full path of the Node by concatentating all parents up to (but not including) the Objects Folder
+ *
+ * @param node			The current node to inspect
+ * @param path			Full Path to the current node
+ */
+void OPCUA::getNodeFullPath(const std::string &nodeId, std::string &path)
+{
+	static char nodeId_ObjectsFolder[] = "i=85";
+	static std::string pathDelimiter("/");
+
+	SOPC_ClientHelper_BrowseRequest browseRequest;
+	SOPC_ClientHelper_BrowseResult browseResult;
+
+	browseRequest.nodeId = nodeId.c_str();					 // Node to inspect
+	browseRequest.direction = OpcUa_BrowseDirection_Inverse; // Inverse is in the direction of the parent
+	browseRequest.referenceTypeId = "";						 // all reference types
+	browseRequest.includeSubtypes = false;
+
+	Logger::getLogger()->debug("Full Path Browse '%s'", browseRequest.nodeId);
+	int res = SOPC_ClientHelper_Browse(m_connectionId, &browseRequest, 1, &browseResult);
+
+	if (res != 0)
+	{
+		Logger::getLogger()->error("Full Path Browse returned %d for Node %s", res, nodeId.c_str());
+		return;
+	}
+	Logger::getLogger()->debug("Full Path Browse status: %d, nbOfResults: %d", browseResult.statusCode, browseResult.nbOfReferences);
+
+	for (int32_t i = 0; i < browseResult.nbOfReferences; i++)
+	{
+		Logger::getLogger()->debug("Item #%d: NodeId %s, BrowseName %s, DisplayName %s, RefTypeId %s, NodeClass %s",
+								   i, browseResult.references[i].nodeId,
+								   browseResult.references[i].browseName,
+								   browseResult.references[i].displayName,
+								   browseResult.references[i].referenceTypeId,
+								   nodeClass(browseResult.references[i].nodeClass).c_str());
+
+		// Stop building the full path when the parent is the top-level Objects folder
+		if (strncmp(browseResult.references[i].nodeId, nodeId_ObjectsFolder, strlen(nodeId_ObjectsFolder)) != 0)
+		{
+			getNodeFullPath(browseResult.references[i].nodeId, path);
+			path = path.append(pathDelimiter).append(browseResult.references[i].browseName);
+		}
+
+		free(browseResult.references[i].nodeId);
+		free(browseResult.references[i].displayName);
+		free(browseResult.references[i].browseName);
+		free(browseResult.references[i].referenceTypeId);
+	}
+	free(browseResult.references);
 }
 
 /**
@@ -1332,7 +1427,7 @@ void OPCUA::Node::duplicateBrowseName()
  * Browse a node and add to the subscription list if it is a variable.
  * If it is a FolderType then recurse down the child nodes
  *
- * @param nodeid	Nodeid of the candidiate to subscribe to
+ * @param nodeid	NodeId of the candidate to subscribe to
  * @param variables	Vector of variable node ID's
  */
 void OPCUA::browse(const string &nodeid, vector<string> &variables)

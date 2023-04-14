@@ -164,13 +164,30 @@ static const char *default_config = QUOTE({
 	    "group" : "OPC UA Security",
             "validity": " securityMode == \"Sign\" || securityMode == \"SignAndEncrypt\" "
             },
+    "parentPathMetadata" : {
+            "description" : "Include full OPC UA path as meta data" ,
+            "type" : "boolean",
+            "default" : "false",
+            "displayName" : "Include Full OPC UA Path as meta data",
+	    "group" : "OPC UA Advanced",
+            "order" : "17"
+            },
+    "parentPath" : {
+            "description" : "Name for Full OPC UA Path meta data, if enabled" ,
+            "type" : "string",
+            "default" : "OPCUAPath",
+            "displayName" : "Full OPC UA Path meta data name",
+	    "group" : "OPC UA Advanced",
+            "order" : "18",
+            "validity": " parentPathMetadata == \"true\" "
+            },
     "traceFile" : {
             "description" : "Enable trace file for debugging" ,
             "type" : "boolean",
             "default" : "false",
             "displayName" : "Debug Trace File",
 	    "group" : "OPC UA Advanced",
-            "order" : "17"
+            "order" : "19"
             }
     });
 

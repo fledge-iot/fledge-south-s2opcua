@@ -100,6 +100,7 @@ class OPCUA
     private:
         int         		subscribe();
 	void			browse(const std::string& nodeId, std::vector<std::string>&);
+    void            getNodeFullPath(const std::string &nodeId, std::string& path);
     void            setRetryThread(bool start);
 	SOPC_ClientHelper_GetEndpointsResult
 				*GetEndPoints(const char *endPointUrl);
@@ -141,6 +142,8 @@ class OPCUA
         bool                 	m_disableCertVerif;
         char                 	*m_traceFile;
         uint32_t             	m_maxKeepalive;
+        bool                    m_includePathAsMetadata;
+        std::string             m_metaDataName;
 	char		    *m_path_cert_auth;
 	char			*m_path_crl;
 	char			*m_path_cert_srv;
@@ -158,6 +161,8 @@ class OPCUA
 				m_parents;	// Map variable node id to parent node id
 	std::map<std::string, Node *>
 				m_parentNodes;
+	std::map<std::string, std::string>
+				m_fullPaths; 	// Map variable node id to full OPC UA path
 };
 
 #endif
