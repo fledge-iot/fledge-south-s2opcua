@@ -163,6 +163,37 @@ static void FreeEndpointCollection(SOPC_ClientHelper_GetEndpointsResult *endpoin
 }
 
 /**
+ * Determine whether a Reference Type is a valid parent when
+ * creating a full OPC UA path to a Variable
+ *
+ * @param referenceId	Reference Type to be examined
+ * @return isValid		If true, reference type is a value parent
+ */
+static bool IsValidParentReferenceId(char *referenceId)
+{
+	static char *validReferenceIds[] = {	// Reference Types of valid parents
+		const_cast<char *>("i=35"), // Organizes/OrganizedBy
+		const_cast<char *>("i=46"), // HasProperty/PropertyOf
+		const_cast<char *>("i=47"), // HasComponent/ComponentOf
+		const_cast<char *>("i=49"), // HasOrderedComponent/OrderedComponentOf
+		const_cast<char *>("")};	// end of list
+
+	if (referenceId == NULL) return false;
+
+	bool found = false;
+	for (int i = 0; strlen(validReferenceIds[i]); i++)
+	{
+		if (strncmp(referenceId, validReferenceIds[i], strlen(validReferenceIds[i])) == 0)
+		{
+			found = true;
+			break;
+		}
+	}
+
+	return found;
+}
+
+/**
  * A data value we are monitoring has changed
  *
  * @param nodeId	The ID of the node that has changed
@@ -813,6 +844,7 @@ void OPCUA::getNodeFullPath(const std::string &nodeId, std::string &path)
 	}
 	Logger::getLogger()->debug("Full Path Browse status: %d, nbOfResults: %d", browseResult.statusCode, browseResult.nbOfReferences);
 
+	bool foundParent = false;
 	for (int32_t i = 0; i < browseResult.nbOfReferences; i++)
 	{
 		Logger::getLogger()->debug("Item #%d: NodeId %s, BrowseName %s, DisplayName %s, RefTypeId %s, NodeClass %s",
@@ -822,11 +854,15 @@ void OPCUA::getNodeFullPath(const std::string &nodeId, std::string &path)
 								   browseResult.references[i].referenceTypeId,
 								   nodeClass(browseResult.references[i].nodeClass).c_str());
 
+		// Build an OPC UA path only if the reference type is appropriate (e.g. relationships but no notifiers)
 		// Stop building the full path when the parent is the top-level Objects folder
-		if (strncmp(browseResult.references[i].nodeId, nodeId_ObjectsFolder, strlen(nodeId_ObjectsFolder)) != 0)
+		if (!foundParent &&
+			IsValidParentReferenceId(browseResult.references[i].referenceTypeId) &&
+			strncmp(browseResult.references[i].nodeId, nodeId_ObjectsFolder, strlen(nodeId_ObjectsFolder)) != 0)
 		{
 			getNodeFullPath(browseResult.references[i].nodeId, path);
 			path = path.append(pathDelimiter).append(browseResult.references[i].browseName);
+			foundParent = true;
 		}
 
 		free(browseResult.references[i].nodeId);
