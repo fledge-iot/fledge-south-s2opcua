@@ -265,8 +265,11 @@ void OPCUA::dataChange(const char *nodeId, const SOPC_DataValue *value)
 				break;
 			case SOPC_String_Id:
 			{
-				string str = SOPC_String_GetRawCString(&variant.Value.String);
-				dpv = new DatapointValue(str);
+				if (variant.Value.String.Length > 0 && variant.Value.String.Data != NULL)
+				{
+					string str = SOPC_String_GetRawCString(&variant.Value.String);
+					dpv = new DatapointValue(str);
+				}
 				break;
 			}
 			case SOPC_DateTime_Id:
