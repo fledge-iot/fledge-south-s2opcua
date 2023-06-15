@@ -16,7 +16,10 @@
 #include <unistd.h>
 #include <chrono>
 #include <math.h>
-
+// #include "libs2opc_client.h"
+// extern "C" {
+// #include "libs2opc_client_common.h"
+// };
 using namespace std;
 
 // Hold subscription variables
@@ -200,11 +203,11 @@ static bool IsValidParentReferenceId(char *referenceId)
  * @param value		The new value of the node
  */
 void OPCUA::dataChange(const char *nodeId, const SOPC_DataValue *value)
-{
+{	
 	DatapointValue *dpv = NULL;
 
-	setRetryThread(false);
-	Logger::getLogger()->debug("Data change call for Node %s", nodeId);
+	// setRetryThread(false);
+	Logger::getLogger()->debug("Data change call for Node %s: %d", nodeId, value->Value.Value.Int32);
 
 	// Enforce minimum reporting interval in software
 	struct timeval now;
@@ -581,7 +584,7 @@ void OPCUA::reconfigure(ConfigCategory &config)
 	m_stopped.store(true);
 	setRetryThread(false);
 
-	lock_guard<mutex> guard(m_configMutex);
+	// lock_guard<mutex> guard(m_configMutex);
 
 	opcua->stop();
 	opcua->parseConfig(config);
@@ -709,11 +712,6 @@ int OPCUA::subscribe()
 		return 0;
 	}
 
-	if ((res = SOPC_ClientHelper_CreateSubscription(m_connectionId, datachange_callback)) != 0)
-	{
-		logger->error("Failed to create subscription %d", res);
-		return 0;
-	}
 	vector<string> variables;
 	for (auto it = m_subscriptions.cbegin(); it != m_subscriptions.cend(); it++)
 	{
@@ -746,13 +744,26 @@ int OPCUA::subscribe()
 		logger->error("Failed to allocate memory for %d subscriptions", variables.size());
 		return 0;
 	}
+	memset((void *) node_ids, 0, variables.size() * sizeof(char *));
+
 	int i = 0;
+	int numSkipped = 0;
+	int nsize = 0;
 	for (auto it = variables.cbegin(); it != variables.cend(); it++)
 	{
 		try
 		{
-			Node *node = new Node(m_connectionId, variables[i].c_str());
-			m_nodes.insert(pair<string, Node *>(variables[i], node));
+			// SOPC_NodeId *nodeId = SOPC_NodeIdFromCString(variables[i].c_str(), variables[i].length());
+			if (it->find("._") != std::string::npos)
+			{
+				logger->debug("Skipping Node %s", it->c_str());
+				numSkipped++;
+				continue;
+			}
+
+			Node *node = new Node(m_connectionId, it->c_str());
+			m_nodes.insert(pair<string, Node *>(*it, node));
+			nsize = m_nodes.size();
 			logger->debug("Subscribe to Node %s, BrowseName %s", node->getNodeId().c_str(), node->getBrowseName().c_str());
 			node_ids[i++] = strdup((char *)it->c_str());
 
@@ -769,25 +780,65 @@ int OPCUA::subscribe()
 			logger->error("Unable to subscribe to Node %s", it->c_str());
 		}
 	}
-	res = SOPC_ClientHelper_AddMonitoredItems(m_connectionId, node_ids, variables.size(), NULL);
-	switch (res)
+	
+    // SOPC_LibSub_AttributeId* lAttrIds = (SOPC_LibSub_AttributeId*)calloc(variables.size(), sizeof(SOPC_LibSub_AttributeId));
+	// for (size_t i = 0; i < variables.size(); ++i)
+	// {
+	// 	lAttrIds[i] = SOPC_LibSub_AttributeId_Value;
+	// }
+
+	// SOPC_LibSub_DataId* lDataId = (SOPC_LibSub_DataId*)calloc(variables.size(), sizeof(SOPC_LibSub_DataId));
+	if ((res = SOPC_ClientHelper_CreateSubscription(m_connectionId, datachange_callback)) != 0)
 	{
-	case 0:
-		logger->info("Added %d Monitored Items", (int)variables.size());
-		break;
-	case -1:
-		logger->error("Failed to add %d Monitored Items, connection not valid", (int)variables.size());
-		break;
-	case -2:
-		logger->error("Failed to add Monitored Items, invalid nodes for %d nodes", (int)variables.size());
-		break;
-	case -100:
-		logger->error("Failed to add %d Monitored Items", (int)variables.size());
-		break;
-	default:
-		logger->error("Failed to add %d Monitored Items, NodeId '%s' not valid", (int)variables.size(), node_ids[abs(res) - 3]);
-		break;
+		logger->error("Failed to create subscription %d", res);
+		return 0;
 	}
+
+	int totalMonitoredItems = m_nodes.size();
+	logger->debug("Variables check done: i %d totalMonitoredItems %d", i, totalMonitoredItems);
+	int regBlockSize = 4000;
+	i = 0;
+	res = 0;
+	SOPC_ReturnStatus status = SOPC_STATUS_OK;
+	bool done = false;
+	do
+	{
+		int numNodeIds = regBlockSize;
+		if (i + numNodeIds >= totalMonitoredItems)
+		{
+			numNodeIds = totalMonitoredItems - i;
+			done = true;
+		}
+		logger->debug("MI_AddMonitoredItems_Call: %d %d %d", i, numNodeIds, totalMonitoredItems);
+		res = SOPC_ClientHelper_AddMonitoredItems(m_connectionId, &node_ids[i], numNodeIds, NULL);
+		        
+        // status = SOPC_ClientCommon_AddToSubscription((SOPC_LibSub_ConnectionId) m_connectionId, (const char* const*) &node_ids[i],
+        //                                         &lAttrIds[i], (int32_t) numNodeIds, &lDataId[i], NULL);
+		logger->debug("MI_AddMonitoredItems_Done: %d %d %d Status: %d Res: %d", i, numNodeIds, totalMonitoredItems, (int)status, res);
+		switch (res)
+		{
+		case 0:
+			logger->info("Added %d Monitored Items", numNodeIds);
+			break;
+		case -1:
+			logger->error("[%d] Failed to add %d Monitored Items, connection not valid", res, numNodeIds);
+			break;
+		case -2:
+			logger->error("[%d] Failed to add Monitored Items, invalid nodes for %d nodes", res, numNodeIds);
+			break;
+		case -100:
+			logger->error("[%d] Failed to add %d Monitored Items", res, numNodeIds);
+			break;
+		default:
+			logger->error("[%d] Failed to add %d Monitored Items, NodeId '%s' not valid", res, numNodeIds, node_ids[abs(res) - 3]);
+			res = 0;
+			break;
+		}
+		i += regBlockSize;
+		// done = true;
+
+	} while (!done && (res == 0));
+
 	for (i = 0; i < variables.size(); i++)
 	{
 		if (node_ids[i])
@@ -795,6 +846,7 @@ int OPCUA::subscribe()
 	}
 	free(node_ids);
 	return res;
+	// return status;
 }
 
 /**
@@ -885,8 +937,22 @@ void OPCUA::getNodeFullPath(const std::string &nodeId, std::string &path)
  */
 void OPCUA::start()
 {
+	lock_guard<mutex> guard(m_configMutex);
 	int n_subscriptions = 0;
-	SOPC_ClientHelper_Security security;
+	SOPC_ClientHelper_Security security = {
+		.security_policy = SOPC_SecurityPolicy_None_URI,
+		.security_mode = OpcUa_MessageSecurityMode_None,
+		.path_cert_auth = NULL,
+		.path_crl = NULL,
+		.path_cert_srv = NULL,
+		.path_cert_cli = NULL,
+		.path_key_cli = NULL,
+		.policyId = "anonymous",
+		.username = NULL,
+		.password = NULL,
+		.path_cert_x509_token = NULL,
+		.path_key_x509_token = NULL,
+	};
 	Logger *logger = Logger::getLogger();
 
 	logger->debug("Calling OPCUA::start");
@@ -916,6 +982,7 @@ void OPCUA::start()
 		}
 
 		if (SOPC_ClientHelper_Initialize(disconnect_callback) != 0)
+		// if (SOPC_ClientHelper_Initialize(NULL) != 0)
 		{
 			logger->fatal("Unable to initialise S2OPC ClientHelper library");
 			throw runtime_error("Unable to initialise ClientHelper library");
@@ -1173,7 +1240,13 @@ void OPCUA::start()
 
 	if (configOK && matched)
 	{
-		m_configurationId = SOPC_ClientHelper_CreateConfiguration(m_url.c_str(), &security, NULL);
+		SOPC_ClientHelper_EndpointConnection endPointConnection =
+		{
+			.endpointUrl = m_url.c_str(),
+			.serverUri = NULL,
+			.reverseConnectionConfigId = 0
+		};
+		m_configurationId = SOPC_ClientHelper_CreateConfiguration(&endPointConnection, &security, NULL);
 		logger->debug("ConfigurationId: %d", (int)m_configurationId);
 		if (m_configurationId <= 0)
 		{
@@ -1221,38 +1294,55 @@ void OPCUA::start()
 		else
 		{
 			// ConfigurationId is valid. Create a connection to the OPC UA Server.
-			m_connectionId = SOPC_ClientHelper_CreateConnection(m_configurationId);
-			if (m_connectionId > 0)
+			try
 			{
-				m_connected.store(true);
-				setRetryThread(false);
+				m_connectionId = SOPC_ClientHelper_CreateConnection(m_configurationId);
+				if (m_connectionId > 0)
+				{
+					m_connected.store(true);
+					setRetryThread(false);
+				}
+				else if (m_connectionId == -1)
+				{
+					m_connected.store(false);
+					logger->error("Failed to create OPC/UA connection to server %s, invalid configuration detected", m_url.c_str());
+				}
+				else if (m_connectionId == -100)
+				{
+					m_connected.store(false);
+					logger->error("Failed to create OPC/UA connection to server %s, connection failed", m_url.c_str());
+				}
+				else
+				{
+					m_connected.store(false);
+					logger->error("Failed to create OPC/UA connection to server %s, unknown error: %d", m_url.c_str(), (int)m_connectionId);
+				}
 			}
-			else if (m_connectionId == -1)
+			catch (std::exception ex)
 			{
+				logger->error("SOPC_ClientHelper_CreateConnection exception: %s", ex.what());
 				m_connected.store(false);
-				logger->error("Failed to create OPC/UA connection to server %s, invalid configuration detected", m_url.c_str());
-			}
-			else if (m_connectionId == -100)
-			{
-				m_connected.store(false);
-				logger->error("Failed to create OPC/UA connection to server %s, connection failed", m_url.c_str());
-			}
-			else
-			{
-				m_connected.store(false);
-				logger->error("Failed to create OPC/UA connection to server %s, unknown error: %d", m_url.c_str(), (int)m_connectionId);
 			}
 		}
 	} // end if configOK && matched
 
-	FreeEndpointCollection(endpoints);
+	try
+	{
+		FreeEndpointCollection(endpoints);
+	}
+	catch (std::exception ex)
+	{
+		logger->error("FreeEndpointCollection exception: %s", ex.what());
+	}
 
 	if (m_connected.load())
 	{
 		logger->info("Successfully connected to OPC/UA Server: %s", m_url.c_str());
-		subscribe();
-		getParents();
-		resolveDuplicateBrowseNames();
+		if (subscribe() == 0)
+		{
+			//getParents();
+			//resolveDuplicateBrowseNames();
+		}
 	}
 	else
 	{
@@ -1364,7 +1454,13 @@ SOPC_ClientHelper_GetEndpointsResult *OPCUA::GetEndPoints(const char *endPointUr
 	SOPC_ClientHelper_GetEndpointsResult *endpoints = NULL;
 	try
 	{
-		int res = SOPC_ClientHelper_GetEndpoints(endPointUrl, &endpoints);
+		SOPC_ClientHelper_EndpointConnection endPointConnection =
+		{
+			.endpointUrl = endPointUrl,
+			.serverUri = NULL,
+			.reverseConnectionConfigId = 0
+		};
+		int res = SOPC_ClientHelper_GetEndpoints(&endPointConnection, &endpoints);
 		if (res == 0)
 		{
 			logger->debug("OPC/UA Server has %d endpoints\n", endpoints->nbOfEndpoints);
@@ -1532,14 +1628,20 @@ void OPCUA::disconnect(const uint32_t connectionId)
 		Logger::getLogger()->warn("OPC/UA Client %d disconnected", (int)connectionId);
 
 	m_connected.store(false);
-	if (!m_stopped.load())
+	if (m_stopped.load())
 	{
-		// This was not a user initiated stop.
+		// This is a user initiated stop.
 		// Stop the retry thread if it is running.
 		// Briefly set m_stopped to 'true' to allow the retry thread to exit.
-		m_stopped.store(true);
-		setRetryThread(false);
-		m_stopped.store(false);
+		// m_stopped.store(true);
+		// setRetryThread(false);
+		// m_stopped.store(false);
+	}
+	else
+	{
+		// SOPC_ClientHelper_Unsubscribe(m_connectionId);
+		// SOPC_ClientHelper_Disconnect(m_connectionId);
+		// setRetryThread(true);
 	}
 }
 
@@ -1558,7 +1660,7 @@ void OPCUA::retry()
 	static int oneminute = 60;
 	int delay = 2;
 	std::this_thread::sleep_for(std::chrono::seconds(delay));
-	m_configMutex.lock();
+	//m_configMutex.lock();
 
 	while (!m_connected.load() && !m_stopped.load())
 	{
@@ -1581,16 +1683,16 @@ void OPCUA::retry()
 
 		// Unlock the mutex while waiting.
 		// This will allow reconfiguration or shutdown to take place in the main thread.
-		m_configMutex.unlock();
+		// m_configMutex.unlock();
 		int numSeconds = 0;
 		while (!m_connected.load() && !m_stopped.load() && (numSeconds < delay))
 		{
 			std::this_thread::sleep_for(std::chrono::seconds(1));
 			numSeconds++;
 		}
-		m_configMutex.lock();
+		//m_configMutex.lock();
 	}
-	m_configMutex.unlock();
+	//m_configMutex.unlock();
 	Logger::getLogger()->debug("OPCUA::retry thread close");
 }
 
