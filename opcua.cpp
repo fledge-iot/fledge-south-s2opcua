@@ -201,6 +201,11 @@ static bool IsValidParentReferenceId(char *referenceId)
  */
 void OPCUA::dataChange(const char *nodeId, const SOPC_DataValue *value)
 {
+	if (m_stopped.load())
+	{
+		return;
+	}
+
 	DatapointValue *dpv = NULL;
 
 	setRetryThread(false);
@@ -316,6 +321,8 @@ void OPCUA::dataChange(const char *nodeId, const SOPC_DataValue *value)
 				dpname.erase(pos, 1);
 			}
 			points.push_back(new Datapoint(dpname, *dpv));
+			delete dpv;
+			dpv = NULL;
 
 			SOPC_DateTime srcTimestamp = value->SourceTimestamp;
 			time_t seconds;
@@ -346,6 +353,8 @@ void OPCUA::dataChange(const char *nodeId, const SOPC_DataValue *value)
 				{
 					Logger::getLogger()->warn("Node %s: Full Path not found", nodeId);
 				}
+				delete dpv;
+				dpv = NULL;
 			}
 
 			ingest(points, tm_userts, parent);
@@ -706,14 +715,9 @@ int OPCUA::subscribe()
 	if (!m_connected.load())
 	{
 		logger->error("Attempt to subscribe aborted, no connection to the server");
-		return 0;
+		return 1;
 	}
 
-	if ((res = SOPC_ClientHelper_CreateSubscription(m_connectionId, datachange_callback)) != 0)
-	{
-		logger->error("Failed to create subscription %d", res);
-		return 0;
-	}
 	vector<string> variables;
 	for (auto it = m_subscriptions.cbegin(); it != m_subscriptions.cend(); it++)
 	{
@@ -744,15 +748,25 @@ int OPCUA::subscribe()
 	if (node_ids == NULL)
 	{
 		logger->error("Failed to allocate memory for %d subscriptions", variables.size());
-		return 0;
+		return 2;
 	}
+	memset((void *) node_ids, 0, variables.size() * sizeof(char *));
+
 	int i = 0;
 	for (auto it = variables.cbegin(); it != variables.cend(); it++)
 	{
 		try
 		{
-			Node *node = new Node(m_connectionId, variables[i].c_str());
-			m_nodes.insert(pair<string, Node *>(variables[i], node));
+			// Hack: Skip any NodeId string with leading underscores in any segment of the path.
+			// ToDo: implement user configuration to skip parsing if a certain prefix is present.
+			if (it->find("._") != std::string::npos)
+			{
+				logger->debug("Skipping Node %s", it->c_str());
+				continue;
+			}
+			
+			Node *node = new Node(m_connectionId, it->c_str());
+			m_nodes.insert(pair<string, Node *>(*it, node));
 			logger->debug("Subscribe to Node %s, BrowseName %s", node->getNodeId().c_str(), node->getBrowseName().c_str());
 			node_ids[i++] = strdup((char *)it->c_str());
 
@@ -769,25 +783,67 @@ int OPCUA::subscribe()
 			logger->error("Unable to subscribe to Node %s", it->c_str());
 		}
 	}
-	res = SOPC_ClientHelper_AddMonitoredItems(m_connectionId, node_ids, variables.size(), NULL);
-	switch (res)
+
+	if ((res = SOPC_ClientHelper_CreateSubscription(m_connectionId, datachange_callback)) != 0)
 	{
-	case 0:
-		logger->info("Added %d Monitored Items", (int)variables.size());
-		break;
-	case -1:
-		logger->error("Failed to add %d Monitored Items, connection not valid", (int)variables.size());
-		break;
-	case -2:
-		logger->error("Failed to add Monitored Items, invalid nodes for %d nodes", (int)variables.size());
-		break;
-	case -100:
-		logger->error("Failed to add %d Monitored Items", (int)variables.size());
-		break;
-	default:
-		logger->error("Failed to add %d Monitored Items, NodeId '%s' not valid", (int)variables.size(), node_ids[abs(res) - 3]);
-		break;
+		logger->error("Failed to create subscription %d", res);
+		return res;
 	}
+
+	int totalMonitoredItems = m_nodes.size();
+	int actualMonitoredItems = 0;
+	int miBlockSize = 1000;
+	int callCount = 0;
+	res = 0;
+	i = 0;
+	bool done = false;
+	do
+	{
+		int numNodeIds = miBlockSize;
+		if (i + numNodeIds >= totalMonitoredItems)
+		{
+			numNodeIds = totalMonitoredItems - i;
+			done = true;
+		}
+
+		logger->debug("MI_AddMonitoredItems_Call: %d %d %d", i, numNodeIds, totalMonitoredItems);
+		res = SOPC_ClientHelper_AddMonitoredItems(m_connectionId, &node_ids[i], numNodeIds, NULL);
+		logger->debug("MI_AddMonitoredItems_Done: Res: %d", res);
+		callCount++;
+
+		switch (res)
+		{
+		case 0:
+			logger->info("Added %d Monitored Items in group %d", numNodeIds, callCount);
+			actualMonitoredItems += numNodeIds;
+			break;
+		case -1:
+			logger->error("[%d] Failed to add %d Monitored Items, connection not valid", res, numNodeIds);
+			break;
+		case -2:
+			logger->error("[%d] Failed to add Monitored Items, invalid nodes for %d nodes", res, numNodeIds);
+			break;
+		case -100:
+			logger->error("[%d] Failed to add %d Monitored Items", res, numNodeIds);
+			break;
+		default:
+			if (res < 0)
+			{
+				logger->error("[%d] Failed to add %d Monitored Items", res, numNodeIds);
+			}
+			else
+			{
+				logger->error("[%d] Failed to add %d Monitored Items, NodeId '%s' not valid", res, numNodeIds, node_ids[abs(res) - 3]);
+				res = 0;
+			}
+			break;
+		}
+		i += miBlockSize;
+
+	} while (!done && (res == 0));
+
+	logger->info("Added %d Monitored Items in total", actualMonitoredItems);
+
 	for (i = 0; i < variables.size(); i++)
 	{
 		if (node_ids[i])
@@ -1269,8 +1325,10 @@ void OPCUA::stop()
 	m_stopped.store(true);
 	if (m_connected.load())
 	{
-		SOPC_ClientHelper_Unsubscribe(m_connectionId);
-		SOPC_ClientHelper_Disconnect(m_connectionId);
+		int res = SOPC_ClientHelper_Unsubscribe(m_connectionId);
+		Logger::getLogger()->debug("SOPC_ClientHelper_Unsubscribe: %d", res);
+		res = SOPC_ClientHelper_Disconnect(m_connectionId);
+		Logger::getLogger()->debug("SOPC_ClientHelper_Disconnect: %d", res);
 		m_connectionId = 0;
 		m_connected.store(false);
 	}
@@ -1444,6 +1502,7 @@ OPCUA::Node::Node(uint32_t conn, const string &nodeId) : m_nodeID(nodeId)
 			m_browseName = (char *)variant.Value.Qname->Name.Data;
 		SOPC_Variant classVariant = values[2].Value;
 		m_nodeClass = (OpcUa_NodeClass)classVariant.Value.Int32;
+		SOPC_ClientHelper_ReadResults_Free(3, values);
 	}
 	else
 	{
