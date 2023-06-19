@@ -209,7 +209,7 @@ void OPCUA::dataChange(const char *nodeId, const SOPC_DataValue *value)
 	DatapointValue *dpv = NULL;
 
 	setRetryThread(false);
-	Logger::getLogger()->debug("Data change call for Node %s", nodeId);
+	// Logger::getLogger()->debug("Data change call for Node %s", nodeId);
 
 	// Enforce minimum reporting interval in software
 	struct timeval now;
@@ -977,6 +977,7 @@ void OPCUA::start()
 			throw runtime_error("Unable to initialise ClientHelper library");
 		}
 
+		Logger::getLogger()->debug("SOPCInit Start");
 		m_init = true;
 	}
 
@@ -1325,15 +1326,16 @@ void OPCUA::stop()
 	m_stopped.store(true);
 	if (m_connected.load())
 	{
-		int res = SOPC_ClientHelper_Unsubscribe(m_connectionId);
-		Logger::getLogger()->debug("SOPC_ClientHelper_Unsubscribe: %d", res);
-		res = SOPC_ClientHelper_Disconnect(m_connectionId);
+		// int res = SOPC_ClientHelper_Unsubscribe(m_connectionId);
+		// Logger::getLogger()->debug("SOPC_ClientHelper_Unsubscribe: %d", res);
+		int res = SOPC_ClientHelper_Disconnect(m_connectionId);
 		Logger::getLogger()->debug("SOPC_ClientHelper_Disconnect: %d", res);
 		m_connectionId = 0;
 		m_connected.store(false);
 	}
 	if (m_init)
 	{
+		Logger::getLogger()->debug("SOPCInit Stop");
 		SOPC_ClientHelper_Finalize();
 		SOPC_CommonHelper_Clear();
 		m_init = false;
@@ -1452,6 +1454,7 @@ SOPC_ClientHelper_GetEndpointsResult *OPCUA::GetEndPoints(const char *endPointUr
 			// If this is not done, an S2OPCUA background thread will throw an exception that we can't catch.
 			if (m_init)
 			{
+				Logger::getLogger()->debug("SOPCInit GetEndpoints Stop");
 				SOPC_ClientHelper_Finalize();
 				SOPC_CommonHelper_Clear();
 				m_init = false;
@@ -1533,7 +1536,12 @@ void OPCUA::browse(const string &nodeid, vector<string> &variables)
 	int res;
 
 	SOPC_ClientHelper_BrowseRequest browseRequest;
-	SOPC_ClientHelper_BrowseResult browseResult;
+	SOPC_ClientHelper_BrowseResult browseResult =
+	{
+		.statusCode = SOPC_STATUS_NOK,
+		.nbOfReferences = 0,
+		.references = NULL
+	};
 
 	browseRequest.nodeId = (char *)nodeid.c_str();			 // Root/Objects/
 	browseRequest.direction = OpcUa_BrowseDirection_Forward; // forward
