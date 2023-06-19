@@ -20,6 +20,7 @@
 #include <stdlib.h>
 #include <sys/time.h>
 #include <map>
+#include <set>
 extern "C" {
 #include "sopc_logger.h"
 #include "libs2opc_common_config.h"
@@ -107,7 +108,7 @@ class OPCUA
 	std::string		securityMode(OpcUa_MessageSecurityMode mode);
 	std::string		nodeClass(OpcUa_NodeClass nodeClass);
 	void			resolveDuplicateBrowseNames();
-	void			getParents();
+	// void			getParents();
 	int32_t			m_connectionId;
 	int32_t			m_configurationId;
         std::vector<std::string>
@@ -150,6 +151,7 @@ class OPCUA
 	char			*m_path_cert_cli;
 	char			*m_path_key_cli;
 	std::atomic<bool> m_stopped;
+	std::atomic<bool> m_readyForData;
 	std::thread		*m_background;
 	bool			m_init;
 	std::map<std::string, struct timeval>
@@ -157,7 +159,8 @@ class OPCUA
 	enum {
 		ASSET_NAME_SINGLE, ASSET_NAME_SINGLE_OBJ, ASSET_NAME_OBJECT, ASSET_NAME
 				} m_assetNaming;
-	std::map<std::string, std::string>
+	std::set<Node *> m_nodeObjects;
+    std::map<std::string, std::string>
 				m_parents;	// Map variable node id to parent node id
 	std::map<std::string, Node *>
 				m_parentNodes;

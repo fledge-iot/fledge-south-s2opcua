@@ -201,7 +201,7 @@ static bool IsValidParentReferenceId(char *referenceId)
  */
 void OPCUA::dataChange(const char *nodeId, const SOPC_DataValue *value)
 {
-	if (m_stopped.load())
+	if (m_stopped.load() || !m_readyForData.load())
 	{
 		return;
 	}
@@ -391,6 +391,7 @@ OPCUA::OPCUA() : m_publishPeriod(1000),
 {
 	m_connected.store(false);
 	m_stopped.store(false);
+	m_readyForData.store(false);
 	opcua = this;
 }
 
@@ -843,6 +844,7 @@ int OPCUA::subscribe()
 	} while (!done && (res == 0));
 
 	logger->info("Added %d Monitored Items in total", actualMonitoredItems);
+	m_readyForData.store(true);
 
 	for (i = 0; i < variables.size(); i++)
 	{
@@ -856,23 +858,24 @@ int OPCUA::subscribe()
 /**
  * Create nodes for all the parents of the node we subscribe to
  */
-void OPCUA::getParents()
-{
-	for (auto it = m_parents.cbegin(); it != m_parents.cend(); it++)
-	{
-		try
-		{
-			Node *node = new Node(m_connectionId, it->second);
-			m_parentNodes.insert(pair<string, Node *>(it->first, node));
-		}
-		catch (...)
-		{
-			Logger::getLogger()->error("Failed to find parent node with nodeId %s",
-									   it->first.c_str());
-			// Ignore
-		}
-	}
-}
+// void OPCUA::getParents()
+// {
+// 	for (auto it = m_parents.cbegin(); it != m_parents.cend(); it++)
+// 	{
+// 		try
+// 		{
+// 			Node *node = new Node(m_connectionId, it->second);
+// 			m_parentNodes.insert(pair<string, Node *>(it->first, node));
+// 			Logger::getLogger()->debug("ParentNode of %s: %s", it->first.c_str(), node->getNodeId().c_str());
+// 		}
+// 		catch (...)
+// 		{
+// 			Logger::getLogger()->error("Failed to find parent node with nodeId %s",
+// 									   it->first.c_str());
+// 			// Ignore
+// 		}
+// 	}
+// }
 
 /**
  * Get the full path of the Node by concatentating all parents up to (but not including) the Objects Folder
@@ -1308,7 +1311,7 @@ void OPCUA::start()
 	{
 		logger->info("Successfully connected to OPC/UA Server: %s", m_url.c_str());
 		subscribe();
-		getParents();
+		// getParents();
 		resolveDuplicateBrowseNames();
 	}
 	else
@@ -1324,8 +1327,13 @@ void OPCUA::stop()
 {
 	Logger::getLogger()->debug("Calling OPCUA::stop");
 	m_stopped.store(true);
+	m_readyForData.store(false);
 	if (m_connected.load())
 	{
+		// S2OPC Toolkit issue: calling SOPC_ClientHelper_Unsubscribe returns error -100 (operation failed)
+		// and SOPC_ClientHelper_Disconnect returns -3 (already closed connection).
+		// For now, call only SOPC_ClientHelper_Disconnect will be unsubscribe first.
+		// SOPC_ClientHelper_Disconnect by itself returns 0 (operation succeeded).
 		// int res = SOPC_ClientHelper_Unsubscribe(m_connectionId);
 		// Logger::getLogger()->debug("SOPC_ClientHelper_Unsubscribe: %d", res);
 		int res = SOPC_ClientHelper_Disconnect(m_connectionId);
@@ -1341,6 +1349,25 @@ void OPCUA::stop()
 		m_init = false;
 	}
 	// Cleanup memory
+	clearSubscription();
+	m_lastIngest.clear();
+	m_fullPaths.clear();
+	m_parents.clear();
+	m_parentNodes.clear();
+
+	for (Node *node : m_nodeObjects)
+	{
+		delete node;
+	}
+	Logger::getLogger()->debug("ParentNode Clear: %d", m_nodeObjects.size());
+	m_nodeObjects.clear();
+
+	for (pair<string, Node *> item : m_nodes)
+	{
+		delete item.second;
+	}
+	m_nodes.clear();
+
 	if (m_path_cert_auth)
 	{
 		free(m_path_cert_auth);
@@ -1534,6 +1561,7 @@ void OPCUA::Node::duplicateBrowseName()
 void OPCUA::browse(const string &nodeid, vector<string> &variables)
 {
 	int res;
+	Node *parentNode = NULL;
 
 	SOPC_ClientHelper_BrowseRequest browseRequest;
 	SOPC_ClientHelper_BrowseResult browseResult =
@@ -1548,20 +1576,26 @@ void OPCUA::browse(const string &nodeid, vector<string> &variables)
 	browseRequest.referenceTypeId = "";						 // all reference types
 	browseRequest.includeSubtypes = true;
 
-	Logger::getLogger()->debug("Browse '%s'", browseRequest.nodeId);
+	Logger::getLogger()->info("Browsing '%s'", browseRequest.nodeId);
 	/* Browse specified node */
 	res = SOPC_ClientHelper_Browse(m_connectionId, &browseRequest, 1, &browseResult);
 
 	if (res != 0)
 	{
-		Logger::getLogger()->info("Browse returned %d for Node %s", res, nodeid.c_str());
+		Logger::getLogger()->error("Browse returned error %d for Node '%s'", res, browseRequest.nodeId);
 		return;
 	}
-	Logger::getLogger()->debug("status: %d, nbOfResults: %d", browseResult.statusCode, browseResult.nbOfReferences);
+	Logger::getLogger()->info("Browse returned %d results", browseResult.nbOfReferences);
 
 	if (browseResult.nbOfReferences == 0)
 	{
 		Logger::getLogger()->error("Unable to locate the OPCUA Node '%s'", nodeid.c_str());
+	}
+	else
+	{
+		parentNode = new Node(m_connectionId, nodeid);
+		m_nodeObjects.insert(parentNode);
+		Logger::getLogger()->debug("Parent insert %s; %d items", parentNode->getNodeId().c_str(), m_nodeObjects.size());
 	}
 
 	for (int32_t i = 0; i < browseResult.nbOfReferences; i++)
@@ -1573,7 +1607,9 @@ void OPCUA::browse(const string &nodeid, vector<string> &variables)
 		if (browseResult.references[i].nodeClass == OpcUa_NodeClass_Variable)
 		{
 			variables.push_back(browseResult.references[i].nodeId);
-			m_parents.insert(pair<string, string>(browseResult.references[i].nodeId, nodeid));
+			// m_parents.insert(pair<string, string>(browseResult.references[i].nodeId, nodeid));
+			m_parentNodes.insert(pair<string, Node *>(browseResult.references[i].nodeId, parentNode));
+			Logger::getLogger()->debug("Parent of %s: %s", browseResult.references[i].nodeId, nodeid.c_str());
 		}
 		Logger::getLogger()->debug("Item #%d: NodeId %s, displayName %s, nodeClass %s",
 								   i, browseResult.references[i].nodeId,
