@@ -406,9 +406,9 @@ OPCUA::~OPCUA()
 }
 
 /**
- * Clear OPCUA object members and reset default values
+ * Clear OPCUA object members that are loaded from plugin configuration
  */
-void OPCUA::clear()
+void OPCUA::clearConfig()
 {
 	m_url.clear();
 	m_asset.clear();
@@ -422,8 +422,8 @@ void OPCUA::clear()
 	m_clientPrivate.clear();
 	m_caCrl.clear();
 	m_subscriptions.clear();
-	m_fullPaths.clear();
 	m_metaDataName.clear();
+	m_includePathAsMetadata = false;
 	m_assetNaming = ASSET_NAME_SINGLE;
 	m_reportingInterval = 100;
 	m_secMode = OpcUa_MessageSecurityMode_Invalid;
@@ -435,13 +435,62 @@ void OPCUA::clear()
 }
 
 /**
+ * Clear OPCUA object members that are internal lists and indexes
+ */
+void OPCUA::clearData()
+{
+	m_fullPaths.clear();
+	m_lastIngest.clear();
+	m_parents.clear();
+	m_parentNodes.clear();
+
+	for (Node *node : m_nodeObjects)
+	{
+		delete node;
+	}
+	m_nodeObjects.clear();
+
+	for (pair<string, Node *> item : m_nodes)
+	{
+		delete item.second;
+	}
+	m_nodes.clear();
+
+	if (m_path_cert_auth)
+	{
+		free(m_path_cert_auth);
+		m_path_cert_auth = NULL;
+	}
+	if (m_path_crl)
+	{
+		free(m_path_crl);
+		m_path_crl = NULL;
+	}
+	if (m_path_cert_srv)
+	{
+		free(m_path_cert_srv);
+		m_path_cert_srv = NULL;
+	}
+	if (m_path_cert_cli)
+	{
+		free(m_path_cert_cli);
+		m_path_cert_cli = NULL;
+	}
+	if (m_path_key_cli)
+	{
+		free(m_path_key_cli);
+		m_path_key_cli = NULL;
+	}
+}
+
+/**
  * Parse plugin configuration
  *
  * @param config	configuration information
  */
 void OPCUA::parseConfig(ConfigCategory &config)
 {
-	clear();
+	clearConfig();
 
 	if (config.itemExists("url"))
 	{
@@ -593,9 +642,9 @@ void OPCUA::reconfigure(ConfigCategory &config)
 
 	lock_guard<mutex> guard(m_configMutex);
 
+	Logger::getLogger()->info("OPC UA plugin reconfiguration in progress...");
 	opcua->stop();
 	opcua->parseConfig(config);
-	Logger::getLogger()->info("OPC UA plugin reconfiguration in progress...");
 	opcua->start();
 	if (m_connected.load())
 	{
@@ -715,7 +764,7 @@ int OPCUA::subscribe()
 
 	if (!m_connected.load())
 	{
-		logger->error("Attempt to subscribe aborted, no connection to the server");
+		logger->error("Attempt to subscribe aborted, no connection to the OPC UA server");
 		return 1;
 	}
 
@@ -988,8 +1037,10 @@ void OPCUA::start()
 	// If this does not succeed, there is no way to proceed so exit immediately.
 	// GetEndPoints will start a connection retry thread.
 	SOPC_ClientHelper_GetEndpointsResult *endpoints = GetEndPoints(m_url.c_str());
+	Logger::getLogger()->debug("GetEndPoints Done");
 	if (endpoints == NULL)
 	{
+		Logger::getLogger()->debug("GetEndPoints Null");
 		return;
 	}
 
@@ -1285,7 +1336,6 @@ void OPCUA::start()
 			if (m_connectionId > 0)
 			{
 				m_connected.store(true);
-				setRetryThread(false);
 			}
 			else if (m_connectionId == -1)
 			{
@@ -1328,6 +1378,7 @@ void OPCUA::stop()
 	Logger::getLogger()->debug("Calling OPCUA::stop");
 	m_stopped.store(true);
 	m_readyForData.store(false);
+	setRetryThread(false);
 	if (m_connected.load())
 	{
 		// S2OPC Toolkit issue: calling SOPC_ClientHelper_Unsubscribe returns error -100 (operation failed)
@@ -1348,62 +1399,7 @@ void OPCUA::stop()
 		SOPC_CommonHelper_Clear();
 		m_init = false;
 	}
-	// Cleanup memory
-	clearSubscription();
-	m_lastIngest.clear();
-	m_fullPaths.clear();
-	m_parents.clear();
-	m_parentNodes.clear();
-
-	for (Node *node : m_nodeObjects)
-	{
-		delete node;
-	}
-	Logger::getLogger()->debug("ParentNode Clear: %d", m_nodeObjects.size());
-	m_nodeObjects.clear();
-
-	for (pair<string, Node *> item : m_nodes)
-	{
-		delete item.second;
-	}
-	m_nodes.clear();
-
-	if (m_path_cert_auth)
-	{
-		free(m_path_cert_auth);
-		m_path_cert_auth = NULL;
-	}
-	if (m_path_cert_auth)
-	{
-		free(m_path_cert_auth);
-		m_path_cert_auth = NULL;
-	}
-	if (m_path_crl)
-	{
-		free(m_path_crl);
-		m_path_crl = NULL;
-	}
-	if (m_path_cert_srv)
-	{
-		free(m_path_cert_srv);
-		m_path_cert_srv = NULL;
-	}
-	if (m_path_cert_cli)
-	{
-		free(m_path_cert_cli);
-		m_path_cert_cli = NULL;
-	}
-	if (m_path_key_cli)
-	{
-		free(m_path_key_cli);
-		m_path_key_cli = NULL;
-	}
-	if (m_traceFile)
-	{
-		free(m_traceFile);
-		m_traceFile = NULL;
-	}
-
+	clearData();
 	Logger::getLogger()->debug("Leaving OPCUA::stop");
 }
 
@@ -1452,7 +1448,7 @@ SOPC_ClientHelper_GetEndpointsResult *OPCUA::GetEndPoints(const char *endPointUr
 	try
 	{
 		int res = SOPC_ClientHelper_GetEndpoints(endPointUrl, &endpoints);
-		if (res == 0)
+		if ((res == 0) && (endpoints != NULL))
 		{
 			logger->debug("OPC/UA Server has %d endpoints\n", endpoints->nbOfEndpoints);
 
@@ -1635,14 +1631,12 @@ void OPCUA::disconnect(const uint32_t connectionId)
 		Logger::getLogger()->warn("OPC/UA Client %d disconnected", (int)connectionId);
 
 	m_connected.store(false);
+	m_readyForData.store(false);
+
 	if (!m_stopped.load())
 	{
-		// This was not a user initiated stop.
-		// Stop the retry thread if it is running.
-		// Briefly set m_stopped to 'true' to allow the retry thread to exit.
-		m_stopped.store(true);
-		setRetryThread(false);
-		m_stopped.store(false);
+		// This was not a user initiated stop so start the retry thread
+		setRetryThread(true);
 	}
 }
 
@@ -1668,6 +1662,7 @@ void OPCUA::retry()
 		try
 		{
 			Logger::getLogger()->debug("OPCUA::retry before start");
+			clearData();
 			start();
 			Logger::getLogger()->debug("OPCUA::retry after start: Delay: %d Connected: %d Stopped: %d", delay, (int)m_connected.load(), (int)m_stopped.load());
 		}

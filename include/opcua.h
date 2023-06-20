@@ -48,7 +48,8 @@ class OPCUA
     public:
         OPCUA();
         ~OPCUA();
-        void        clear();
+        void        clearConfig();
+        void        clearData();
         void        parseConfig(ConfigCategory &config);
         void        reconfigure(ConfigCategory &config);
         void        clearSubscription();
