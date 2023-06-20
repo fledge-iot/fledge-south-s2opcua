@@ -994,7 +994,20 @@ void OPCUA::getNodeFullPath(const std::string &nodeId, std::string &path)
 void OPCUA::start()
 {
 	int n_subscriptions = 0;
-	SOPC_ClientHelper_Security security;
+	SOPC_ClientHelper_Security security = {
+		.security_policy = SOPC_SecurityPolicy_None_URI,
+		.security_mode = OpcUa_MessageSecurityMode_None,
+		.path_cert_auth = NULL,
+		.path_crl = NULL,
+		.path_cert_srv = NULL,
+		.path_cert_cli = NULL,
+		.path_key_cli = NULL,
+		.policyId = "anonymous",
+		.username = NULL,
+		.password = NULL,
+		.path_cert_x509_token = NULL,
+		.path_key_x509_token = NULL,
+	};
 	Logger *logger = Logger::getLogger();
 
 	logger->debug("Calling OPCUA::start");
@@ -1284,7 +1297,13 @@ void OPCUA::start()
 
 	if (configOK && matched)
 	{
-		m_configurationId = SOPC_ClientHelper_CreateConfiguration(m_url.c_str(), &security, NULL);
+		SOPC_ClientHelper_EndpointConnection endPointConnection =
+		{
+			.endpointUrl = m_url.c_str(),
+			.serverUri = NULL,
+			.reverseConnectionConfigId = 0
+		};
+		m_configurationId = SOPC_ClientHelper_CreateConfiguration(&endPointConnection, &security, NULL);
 		logger->debug("ConfigurationId: %d", (int)m_configurationId);
 		if (m_configurationId <= 0)
 		{
@@ -1447,7 +1466,13 @@ SOPC_ClientHelper_GetEndpointsResult *OPCUA::GetEndPoints(const char *endPointUr
 	SOPC_ClientHelper_GetEndpointsResult *endpoints = NULL;
 	try
 	{
-		int res = SOPC_ClientHelper_GetEndpoints(endPointUrl, &endpoints);
+		SOPC_ClientHelper_EndpointConnection endPointConnection =
+		{
+			.endpointUrl = endPointUrl,
+			.serverUri = NULL,
+			.reverseConnectionConfigId = 0
+		};
+		int res = SOPC_ClientHelper_GetEndpoints(&endPointConnection, &endpoints);
 		if ((res == 0) && (endpoints != NULL))
 		{
 			logger->debug("OPC/UA Server has %d endpoints\n", endpoints->nbOfEndpoints);
