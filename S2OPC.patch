@@ -102,6 +102,19 @@ index 5d36fe1..8242a65 100644
          case SOPC_DateTime_Id:
          case SOPC_Guid_Id:
          case SOPC_XmlElement_Id:
+diff --git a/src/ClientServer/services/b2c/message_out_bs.c b/src/ClientServer/services/b2c/message_out_bs.c
+index 5caa845..02b068f 100644
+--- a/src/ClientServer/services/b2c/message_out_bs.c
++++ b/src/ClientServer/services/b2c/message_out_bs.c
+@@ -258,7 +258,7 @@ static void internal__message_out_bs__encode_msg(const constants__t_channel_conf
+             reqHeader = (OpcUa_RequestHeader*) message_out_bs__msg_header;
+             reqHeader->Timestamp = SOPC_Time_GetCurrentTimeUTC();
+             // TODO: reqHeader->AuditEntryId ?
+-            reqHeader->TimeoutHint = SOPC_REQUEST_TIMEOUT_MS / 2; // TODO: to be configured by each service ?
++            reqHeader->TimeoutHint = 0; // TODO: to be configured by each service ?
+         }
+         else if (&OpcUa_ResponseHeader_EncodeableType == headerType)
+         {
 diff --git a/src/Common/configuration/sopc_common_constants.h b/src/Common/configuration/sopc_common_constants.h
 index cd922b8..ca588e2 100644
 --- a/src/Common/configuration/sopc_common_constants.h
