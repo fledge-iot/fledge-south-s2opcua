@@ -129,40 +129,6 @@ static std::string DateTimeToString(SOPC_DateTime timestamp)
 }
 
 /**
- * Free memory from an SOPC Endpoints collection
- *
- * @param endpoints	An SOPC Endpoints collection
- */
-static void FreeEndpointCollection(SOPC_ClientHelper_GetEndpointsResult *endpoints)
-{
-	if (endpoints)
-	{
-		if (endpoints->endpoints)
-		{
-			for (int32_t i = 0; i < endpoints->nbOfEndpoints; i++)
-			{
-				free(endpoints->endpoints[i].endpointUrl);
-				free(endpoints->endpoints[i].security_policyUri);
-				free(endpoints->endpoints[i].transportProfileUri);
-				if (NULL != endpoints->endpoints[i].userIdentityTokens)
-				{
-					for (int32_t j = 0; j < endpoints->endpoints[i].nbOfUserIdentityTokens; j++)
-					{
-						free(endpoints->endpoints[i].userIdentityTokens[j].policyId);
-						free(endpoints->endpoints[i].userIdentityTokens[j].issuedTokenType);
-						free(endpoints->endpoints[i].userIdentityTokens[j].issuerEndpointUrl);
-						free(endpoints->endpoints[i].userIdentityTokens[j].securityPolicyUri);
-					}
-					free(endpoints->endpoints[i].userIdentityTokens);
-				}
-			}
-			free(endpoints->endpoints);
-		}
-		free(endpoints);
-	}
-}
-
-/**
  * Determine whether a Reference Type is a valid parent when
  * creating a full OPC UA path to a Variable
  *
@@ -209,7 +175,6 @@ void OPCUA::dataChange(const char *nodeId, const SOPC_DataValue *value)
 	DatapointValue *dpv = NULL;
 
 	setRetryThread(false);
-	// Logger::getLogger()->debug("Data change call for Node %s", nodeId);
 
 	// Enforce minimum reporting interval in software
 	struct timeval now;
@@ -307,6 +272,7 @@ void OPCUA::dataChange(const char *nodeId, const SOPC_DataValue *value)
 
 		if (dpv)
 		{
+			Logger::getLogger()->debug("DataChange: %s,%s,%s", DateTimeToString(value->SourceTimestamp).c_str(), dpv->toString().c_str(), nodeId);
 			vector<Datapoint *> points;
 			string dpname = nodeId;
 			auto res = m_nodes.find(nodeId);
@@ -975,13 +941,8 @@ void OPCUA::getNodeFullPath(const std::string &nodeId, std::string &path)
 			path = path.append(pathDelimiter).append(browseResult.references[i].browseName);
 			foundParent = true;
 		}
-
-		free(browseResult.references[i].nodeId);
-		free(browseResult.references[i].displayName);
-		free(browseResult.references[i].browseName);
-		free(browseResult.references[i].referenceTypeId);
 	}
-	free(browseResult.references);
+	SOPC_ClientHelper_BrowseResults_Clear(1, &browseResult);
 }
 
 /**
@@ -1002,7 +963,7 @@ void OPCUA::start()
 		.path_cert_srv = NULL,
 		.path_cert_cli = NULL,
 		.path_key_cli = NULL,
-		.policyId = "anonymous",
+		.policyId = NULL,
 		.username = NULL,
 		.password = NULL,
 		.path_cert_x509_token = NULL,
@@ -1050,7 +1011,6 @@ void OPCUA::start()
 	// If this does not succeed, there is no way to proceed so exit immediately.
 	// GetEndPoints will start a connection retry thread.
 	SOPC_ClientHelper_GetEndpointsResult *endpoints = GetEndPoints(m_url.c_str());
-	Logger::getLogger()->debug("GetEndPoints Done");
 	if (endpoints == NULL)
 	{
 		Logger::getLogger()->debug("GetEndPoints Null");
@@ -1374,7 +1334,7 @@ void OPCUA::start()
 		}
 	} // end if configOK && matched
 
-	FreeEndpointCollection(endpoints);
+	SOPC_ClientHelper_GetEndpointsResult_Free(&endpoints);
 
 	if (m_connected.load())
 	{
@@ -1419,6 +1379,7 @@ void OPCUA::stop()
 		m_init = false;
 	}
 	clearData();
+	clearConfig();
 	Logger::getLogger()->debug("Leaving OPCUA::stop");
 }
 
@@ -1473,6 +1434,7 @@ SOPC_ClientHelper_GetEndpointsResult *OPCUA::GetEndPoints(const char *endPointUr
 			.reverseConnectionConfigId = 0
 		};
 		int res = SOPC_ClientHelper_GetEndpoints(&endPointConnection, &endpoints);
+		
 		if ((res == 0) && (endpoints != NULL))
 		{
 			logger->debug("OPC/UA Server has %d endpoints\n", endpoints->nbOfEndpoints);
@@ -1724,8 +1686,6 @@ void OPCUA::retry()
  */
 void OPCUA::setRetryThread(bool start)
 {
-	Logger::getLogger()->debug("OPCUA::setRetryThread(%d)", (int)start);
-
 	if (start)
 	{
 		if (m_background == NULL)
