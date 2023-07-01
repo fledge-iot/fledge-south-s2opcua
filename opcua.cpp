@@ -175,6 +175,11 @@ void OPCUA::dataChange(const char *nodeId, const SOPC_DataValue *value)
 	DatapointValue *dpv = NULL;
 
 	setRetryThread(false);
+	if ((value->Status & SOPC_DataValueOverflowStatusMask) == SOPC_DataValueOverflowStatusMask)
+	{
+		Logger::getLogger()->warn("NodeId %s: DataValueOverflow", nodeId);
+		m_numOpcUaOverflows++;
+	}
 
 	// Enforce minimum reporting interval in software
 	struct timeval now;
@@ -324,6 +329,7 @@ void OPCUA::dataChange(const char *nodeId, const SOPC_DataValue *value)
 			}
 
 			ingest(points, tm_userts, parent);
+			m_numOpcUaValues++;
 		}
 	}
 
@@ -344,6 +350,8 @@ OPCUA::OPCUA() : m_publishPeriod(1000),
 				 m_maxKeepalive(30), m_tokenTarget(1),
 				 m_configurationId(0),
 				 m_connectionId(0),
+				 m_numOpcUaValues(0),
+				 m_numOpcUaOverflows(0),
 				 m_disableCertVerif(false),
 				 m_path_cert_auth(NULL),
 				 m_path_crl(NULL),
@@ -768,6 +776,7 @@ int OPCUA::subscribe()
 	}
 	memset((void *) node_ids, 0, variables.size() * sizeof(char *));
 
+	logger->info("Starting NodeId lookup for %d Variables", (int)variables.size());
 	int i = 0;
 	for (auto it = variables.cbegin(); it != variables.cend(); it++)
 	{
@@ -781,9 +790,20 @@ int OPCUA::subscribe()
 				continue;
 			}
 			
-			Node *node = new Node(m_connectionId, it->c_str());
-			m_nodes.insert(pair<string, Node *>(*it, node));
-			logger->debug("Subscribe to Node %s, BrowseName %s", node->getNodeId().c_str(), node->getBrowseName().c_str());
+			Node *node = NULL;
+			auto findItr = m_nodes.find(*it);
+			if (findItr == m_nodes.end())
+			{
+				node = new Node(m_connectionId, it->c_str());
+				m_nodes.insert(pair<string, Node *>(*it, node));
+				logger->debug("Subscribe to Node %s, BrowseName(a) %s", node->getNodeId().c_str(), node->getBrowseName().c_str());
+			}
+			else
+			{
+				node = findItr->second;
+				logger->debug("Subscribe to Node %s, BrowseName(b) %s", node->getNodeId().c_str(), node->getBrowseName().c_str());
+			}
+
 			node_ids[i++] = strdup((char *)it->c_str());
 
 			if (m_includePathAsMetadata)
@@ -1380,6 +1400,7 @@ void OPCUA::stop()
 	}
 	clearData();
 	clearConfig();
+	Logger::getLogger()->info("Total Data Values sent: %lu Total Overflows:  %lu", m_numOpcUaValues, m_numOpcUaOverflows);
 	Logger::getLogger()->debug("Leaving OPCUA::stop");
 }
 
@@ -1524,6 +1545,11 @@ OPCUA::Node::Node(uint32_t conn, const string &nodeId) : m_nodeID(nodeId)
 	}
 }
 
+OPCUA::Node::Node(const string &nodeId, const std::string& BrowseName) : m_nodeID(nodeId), m_browseName(BrowseName)
+{
+	m_nodeClass = OpcUa_NodeClass_Variable;
+}
+
 /**
  * We have detected two browse names that are the same. Resolve this
  * by adding the nodeID to the browse name.
@@ -1589,7 +1615,16 @@ void OPCUA::browse(const string &nodeid, vector<string> &variables)
 		}
 		if (browseResult.references[i].nodeClass == OpcUa_NodeClass_Variable)
 		{
+			if (strstr(browseResult.references[i].nodeId, "._") != NULL)
+			{
+				Logger::getLogger()->debug("Skipping Browse Node %s", browseResult.references[i].nodeId);
+				continue;
+			}
+
 			variables.push_back(browseResult.references[i].nodeId);
+			Node *node = new Node(browseResult.references[i].nodeId, browseResult.references[i].browseName);
+			m_nodes.insert(pair<string, Node *>(browseResult.references[i].nodeId, node));
+
 			// m_parents.insert(pair<string, string>(browseResult.references[i].nodeId, nodeid));
 			m_parentNodes.insert(pair<string, Node *>(browseResult.references[i].nodeId, parentNode));
 			Logger::getLogger()->debug("Parent of %s: %s", browseResult.references[i].nodeId, nodeid.c_str());

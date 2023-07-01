@@ -88,6 +88,7 @@ class OPCUA
 	{
 		public:
 				Node(uint32_t connId, const std::string& nodeId);
+				Node(const std::string& nodeId, const std::string& BrowseName);
 				std::string	getBrowseName() { return m_browseName; };
 				uint32_t	getType() { return m_type; };
 				std::string	getNodeId() { return m_nodeID; };
@@ -123,7 +124,9 @@ class OPCUA
         std::mutex            	m_configMutex;
         std::atomic<bool>       m_connected;
         long                	m_reportingInterval;
-        
+        unsigned long           m_numOpcUaValues;
+        unsigned long           m_numOpcUaOverflows;
+
         std::string         	m_secPolicy;
         OpcUa_MessageSecurityMode m_secMode;
 
