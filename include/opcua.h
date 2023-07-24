@@ -20,6 +20,7 @@
 #include <stdlib.h>
 #include <sys/time.h>
 #include <map>
+#include <set>
 extern "C" {
 #include "sopc_logger.h"
 #include "libs2opc_common_config.h"
@@ -47,7 +48,8 @@ class OPCUA
     public:
         OPCUA();
         ~OPCUA();
-        void        clear();
+        void        clearConfig();
+        void        clearData();
         void        parseConfig(ConfigCategory &config);
         void        reconfigure(ConfigCategory &config);
         void        clearSubscription();
@@ -86,6 +88,7 @@ class OPCUA
 	{
 		public:
 				Node(uint32_t connId, const std::string& nodeId);
+				Node(const std::string& nodeId, const std::string& BrowseName);
 				std::string	getBrowseName() { return m_browseName; };
 				uint32_t	getType() { return m_type; };
 				std::string	getNodeId() { return m_nodeID; };
@@ -107,7 +110,7 @@ class OPCUA
 	std::string		securityMode(OpcUa_MessageSecurityMode mode);
 	std::string		nodeClass(OpcUa_NodeClass nodeClass);
 	void			resolveDuplicateBrowseNames();
-	void			getParents();
+	// void			getParents();
 	int32_t			m_connectionId;
 	int32_t			m_configurationId;
         std::vector<std::string>
@@ -121,7 +124,9 @@ class OPCUA
         std::mutex            	m_configMutex;
         std::atomic<bool>       m_connected;
         long                	m_reportingInterval;
-        
+        unsigned long           m_numOpcUaValues;
+        unsigned long           m_numOpcUaOverflows;
+
         std::string         	m_secPolicy;
         OpcUa_MessageSecurityMode m_secMode;
 
@@ -150,6 +155,7 @@ class OPCUA
 	char			*m_path_cert_cli;
 	char			*m_path_key_cli;
 	std::atomic<bool> m_stopped;
+	std::atomic<bool> m_readyForData;
 	std::thread		*m_background;
 	bool			m_init;
 	std::map<std::string, struct timeval>
@@ -157,7 +163,8 @@ class OPCUA
 	enum {
 		ASSET_NAME_SINGLE, ASSET_NAME_SINGLE_OBJ, ASSET_NAME_OBJECT, ASSET_NAME
 				} m_assetNaming;
-	std::map<std::string, std::string>
+	std::set<Node *> m_nodeObjects;
+    std::map<std::string, std::string>
 				m_parents;	// Map variable node id to parent node id
 	std::map<std::string, Node *>
 				m_parentNodes;

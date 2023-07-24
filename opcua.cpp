@@ -129,40 +129,6 @@ static std::string DateTimeToString(SOPC_DateTime timestamp)
 }
 
 /**
- * Free memory from an SOPC Endpoints collection
- *
- * @param endpoints	An SOPC Endpoints collection
- */
-static void FreeEndpointCollection(SOPC_ClientHelper_GetEndpointsResult *endpoints)
-{
-	if (endpoints)
-	{
-		if (endpoints->endpoints)
-		{
-			for (int32_t i = 0; i < endpoints->nbOfEndpoints; i++)
-			{
-				free(endpoints->endpoints[i].endpointUrl);
-				free(endpoints->endpoints[i].security_policyUri);
-				free(endpoints->endpoints[i].transportProfileUri);
-				if (NULL != endpoints->endpoints[i].userIdentityTokens)
-				{
-					for (int32_t j = 0; j < endpoints->endpoints[i].nbOfUserIdentityTokens; j++)
-					{
-						free(endpoints->endpoints[i].userIdentityTokens[j].policyId);
-						free(endpoints->endpoints[i].userIdentityTokens[j].issuedTokenType);
-						free(endpoints->endpoints[i].userIdentityTokens[j].issuerEndpointUrl);
-						free(endpoints->endpoints[i].userIdentityTokens[j].securityPolicyUri);
-					}
-					free(endpoints->endpoints[i].userIdentityTokens);
-				}
-			}
-			free(endpoints->endpoints);
-		}
-		free(endpoints);
-	}
-}
-
-/**
  * Determine whether a Reference Type is a valid parent when
  * creating a full OPC UA path to a Variable
  *
@@ -201,10 +167,19 @@ static bool IsValidParentReferenceId(char *referenceId)
  */
 void OPCUA::dataChange(const char *nodeId, const SOPC_DataValue *value)
 {
+	if (m_stopped.load() || !m_readyForData.load())
+	{
+		return;
+	}
+
 	DatapointValue *dpv = NULL;
 
 	setRetryThread(false);
-	Logger::getLogger()->debug("Data change call for Node %s", nodeId);
+	if ((value->Status & SOPC_DataValueOverflowStatusMask) == SOPC_DataValueOverflowStatusMask)
+	{
+		Logger::getLogger()->warn("NodeId %s: DataValueOverflow", nodeId);
+		m_numOpcUaOverflows++;
+	}
 
 	// Enforce minimum reporting interval in software
 	struct timeval now;
@@ -302,6 +277,7 @@ void OPCUA::dataChange(const char *nodeId, const SOPC_DataValue *value)
 
 		if (dpv)
 		{
+			Logger::getLogger()->debug("DataChange: %s,%s,%s", DateTimeToString(value->SourceTimestamp).c_str(), dpv->toString().c_str(), nodeId);
 			vector<Datapoint *> points;
 			string dpname = nodeId;
 			auto res = m_nodes.find(nodeId);
@@ -316,6 +292,8 @@ void OPCUA::dataChange(const char *nodeId, const SOPC_DataValue *value)
 				dpname.erase(pos, 1);
 			}
 			points.push_back(new Datapoint(dpname, *dpv));
+			delete dpv;
+			dpv = NULL;
 
 			SOPC_DateTime srcTimestamp = value->SourceTimestamp;
 			time_t seconds;
@@ -346,9 +324,12 @@ void OPCUA::dataChange(const char *nodeId, const SOPC_DataValue *value)
 				{
 					Logger::getLogger()->warn("Node %s: Full Path not found", nodeId);
 				}
+				delete dpv;
+				dpv = NULL;
 			}
 
 			ingest(points, tm_userts, parent);
+			m_numOpcUaValues++;
 		}
 	}
 
@@ -369,6 +350,8 @@ OPCUA::OPCUA() : m_publishPeriod(1000),
 				 m_maxKeepalive(30), m_tokenTarget(1),
 				 m_configurationId(0),
 				 m_connectionId(0),
+				 m_numOpcUaValues(0),
+				 m_numOpcUaOverflows(0),
 				 m_disableCertVerif(false),
 				 m_path_cert_auth(NULL),
 				 m_path_crl(NULL),
@@ -382,6 +365,7 @@ OPCUA::OPCUA() : m_publishPeriod(1000),
 {
 	m_connected.store(false);
 	m_stopped.store(false);
+	m_readyForData.store(false);
 	opcua = this;
 }
 
@@ -396,9 +380,9 @@ OPCUA::~OPCUA()
 }
 
 /**
- * Clear OPCUA object members and reset default values
+ * Clear OPCUA object members that are loaded from plugin configuration
  */
-void OPCUA::clear()
+void OPCUA::clearConfig()
 {
 	m_url.clear();
 	m_asset.clear();
@@ -412,8 +396,8 @@ void OPCUA::clear()
 	m_clientPrivate.clear();
 	m_caCrl.clear();
 	m_subscriptions.clear();
-	m_fullPaths.clear();
 	m_metaDataName.clear();
+	m_includePathAsMetadata = false;
 	m_assetNaming = ASSET_NAME_SINGLE;
 	m_reportingInterval = 100;
 	m_secMode = OpcUa_MessageSecurityMode_Invalid;
@@ -425,13 +409,62 @@ void OPCUA::clear()
 }
 
 /**
+ * Clear OPCUA object members that are internal lists and indexes
+ */
+void OPCUA::clearData()
+{
+	m_fullPaths.clear();
+	m_lastIngest.clear();
+	m_parents.clear();
+	m_parentNodes.clear();
+
+	for (Node *node : m_nodeObjects)
+	{
+		delete node;
+	}
+	m_nodeObjects.clear();
+
+	for (pair<string, Node *> item : m_nodes)
+	{
+		delete item.second;
+	}
+	m_nodes.clear();
+
+	if (m_path_cert_auth)
+	{
+		free(m_path_cert_auth);
+		m_path_cert_auth = NULL;
+	}
+	if (m_path_crl)
+	{
+		free(m_path_crl);
+		m_path_crl = NULL;
+	}
+	if (m_path_cert_srv)
+	{
+		free(m_path_cert_srv);
+		m_path_cert_srv = NULL;
+	}
+	if (m_path_cert_cli)
+	{
+		free(m_path_cert_cli);
+		m_path_cert_cli = NULL;
+	}
+	if (m_path_key_cli)
+	{
+		free(m_path_key_cli);
+		m_path_key_cli = NULL;
+	}
+}
+
+/**
  * Parse plugin configuration
  *
  * @param config	configuration information
  */
 void OPCUA::parseConfig(ConfigCategory &config)
 {
-	clear();
+	clearConfig();
 
 	if (config.itemExists("url"))
 	{
@@ -583,9 +616,9 @@ void OPCUA::reconfigure(ConfigCategory &config)
 
 	lock_guard<mutex> guard(m_configMutex);
 
+	Logger::getLogger()->info("OPC UA plugin reconfiguration in progress...");
 	opcua->stop();
 	opcua->parseConfig(config);
-	Logger::getLogger()->info("OPC UA plugin reconfiguration in progress...");
 	opcua->start();
 	if (m_connected.load())
 	{
@@ -705,15 +738,10 @@ int OPCUA::subscribe()
 
 	if (!m_connected.load())
 	{
-		logger->error("Attempt to subscribe aborted, no connection to the server");
-		return 0;
+		logger->error("Attempt to subscribe aborted, no connection to the OPC UA server");
+		return 1;
 	}
 
-	if ((res = SOPC_ClientHelper_CreateSubscription(m_connectionId, datachange_callback)) != 0)
-	{
-		logger->error("Failed to create subscription %d", res);
-		return 0;
-	}
 	vector<string> variables;
 	for (auto it = m_subscriptions.cbegin(); it != m_subscriptions.cend(); it++)
 	{
@@ -744,16 +772,38 @@ int OPCUA::subscribe()
 	if (node_ids == NULL)
 	{
 		logger->error("Failed to allocate memory for %d subscriptions", variables.size());
-		return 0;
+		return 2;
 	}
+	memset((void *) node_ids, 0, variables.size() * sizeof(char *));
+
+	logger->info("Starting NodeId lookup for %d Variables", (int)variables.size());
 	int i = 0;
 	for (auto it = variables.cbegin(); it != variables.cend(); it++)
 	{
 		try
 		{
-			Node *node = new Node(m_connectionId, variables[i].c_str());
-			m_nodes.insert(pair<string, Node *>(variables[i], node));
-			logger->debug("Subscribe to Node %s, BrowseName %s", node->getNodeId().c_str(), node->getBrowseName().c_str());
+			// Hack: Skip any NodeId string with leading underscores in any segment of the path.
+			// ToDo: implement user configuration to skip parsing if a certain prefix is present.
+			if (it->find("._") != std::string::npos)
+			{
+				logger->debug("Skipping Node %s", it->c_str());
+				continue;
+			}
+			
+			Node *node = NULL;
+			auto findItr = m_nodes.find(*it);
+			if (findItr == m_nodes.end())
+			{
+				node = new Node(m_connectionId, it->c_str());
+				m_nodes.insert(pair<string, Node *>(*it, node));
+				logger->debug("Subscribe to Node %s, BrowseName(a) %s", node->getNodeId().c_str(), node->getBrowseName().c_str());
+			}
+			else
+			{
+				node = findItr->second;
+				logger->debug("Subscribe to Node %s, BrowseName(b) %s", node->getNodeId().c_str(), node->getBrowseName().c_str());
+			}
+
 			node_ids[i++] = strdup((char *)it->c_str());
 
 			if (m_includePathAsMetadata)
@@ -769,25 +819,68 @@ int OPCUA::subscribe()
 			logger->error("Unable to subscribe to Node %s", it->c_str());
 		}
 	}
-	res = SOPC_ClientHelper_AddMonitoredItems(m_connectionId, node_ids, variables.size(), NULL);
-	switch (res)
+
+	if ((res = SOPC_ClientHelper_CreateSubscription(m_connectionId, datachange_callback)) != 0)
 	{
-	case 0:
-		logger->info("Added %d Monitored Items", (int)variables.size());
-		break;
-	case -1:
-		logger->error("Failed to add %d Monitored Items, connection not valid", (int)variables.size());
-		break;
-	case -2:
-		logger->error("Failed to add Monitored Items, invalid nodes for %d nodes", (int)variables.size());
-		break;
-	case -100:
-		logger->error("Failed to add %d Monitored Items", (int)variables.size());
-		break;
-	default:
-		logger->error("Failed to add %d Monitored Items, NodeId '%s' not valid", (int)variables.size(), node_ids[abs(res) - 3]);
-		break;
+		logger->error("Failed to create subscription %d", res);
+		return res;
 	}
+
+	int totalMonitoredItems = m_nodes.size();
+	int actualMonitoredItems = 0;
+	int miBlockSize = 1000;
+	int callCount = 0;
+	res = 0;
+	i = 0;
+	bool done = false;
+	do
+	{
+		int numNodeIds = miBlockSize;
+		if (i + numNodeIds >= totalMonitoredItems)
+		{
+			numNodeIds = totalMonitoredItems - i;
+			done = true;
+		}
+
+		logger->debug("MI_AddMonitoredItems_Call: %d %d %d", i, numNodeIds, totalMonitoredItems);
+		res = SOPC_ClientHelper_AddMonitoredItems(m_connectionId, &node_ids[i], numNodeIds, NULL);
+		logger->debug("MI_AddMonitoredItems_Done: Res: %d", res);
+		callCount++;
+
+		switch (res)
+		{
+		case 0:
+			logger->info("Added %d Monitored Items in group %d", numNodeIds, callCount);
+			actualMonitoredItems += numNodeIds;
+			break;
+		case -1:
+			logger->error("[%d] Failed to add %d Monitored Items, connection not valid", res, numNodeIds);
+			break;
+		case -2:
+			logger->error("[%d] Failed to add Monitored Items, invalid nodes for %d nodes", res, numNodeIds);
+			break;
+		case -100:
+			logger->error("[%d] Failed to add %d Monitored Items", res, numNodeIds);
+			break;
+		default:
+			if (res < 0)
+			{
+				logger->error("[%d] Failed to add %d Monitored Items", res, numNodeIds);
+			}
+			else
+			{
+				logger->error("[%d] Failed to add %d Monitored Items, NodeId '%s' not valid", res, numNodeIds, node_ids[abs(res) - 3]);
+				res = 0;
+			}
+			break;
+		}
+		i += miBlockSize;
+
+	} while (!done && (res == 0));
+
+	logger->info("Added %d Monitored Items in total", actualMonitoredItems);
+	m_readyForData.store(true);
+
 	for (i = 0; i < variables.size(); i++)
 	{
 		if (node_ids[i])
@@ -800,23 +893,24 @@ int OPCUA::subscribe()
 /**
  * Create nodes for all the parents of the node we subscribe to
  */
-void OPCUA::getParents()
-{
-	for (auto it = m_parents.cbegin(); it != m_parents.cend(); it++)
-	{
-		try
-		{
-			Node *node = new Node(m_connectionId, it->second);
-			m_parentNodes.insert(pair<string, Node *>(it->first, node));
-		}
-		catch (...)
-		{
-			Logger::getLogger()->error("Failed to find parent node with nodeId %s",
-									   it->first.c_str());
-			// Ignore
-		}
-	}
-}
+// void OPCUA::getParents()
+// {
+// 	for (auto it = m_parents.cbegin(); it != m_parents.cend(); it++)
+// 	{
+// 		try
+// 		{
+// 			Node *node = new Node(m_connectionId, it->second);
+// 			m_parentNodes.insert(pair<string, Node *>(it->first, node));
+// 			Logger::getLogger()->debug("ParentNode of %s: %s", it->first.c_str(), node->getNodeId().c_str());
+// 		}
+// 		catch (...)
+// 		{
+// 			Logger::getLogger()->error("Failed to find parent node with nodeId %s",
+// 									   it->first.c_str());
+// 			// Ignore
+// 		}
+// 	}
+// }
 
 /**
  * Get the full path of the Node by concatentating all parents up to (but not including) the Objects Folder
@@ -867,13 +961,8 @@ void OPCUA::getNodeFullPath(const std::string &nodeId, std::string &path)
 			path = path.append(pathDelimiter).append(browseResult.references[i].browseName);
 			foundParent = true;
 		}
-
-		free(browseResult.references[i].nodeId);
-		free(browseResult.references[i].displayName);
-		free(browseResult.references[i].browseName);
-		free(browseResult.references[i].referenceTypeId);
 	}
-	free(browseResult.references);
+	SOPC_ClientHelper_BrowseResults_Clear(1, &browseResult);
 }
 
 /**
@@ -886,7 +975,20 @@ void OPCUA::getNodeFullPath(const std::string &nodeId, std::string &path)
 void OPCUA::start()
 {
 	int n_subscriptions = 0;
-	SOPC_ClientHelper_Security security;
+	SOPC_ClientHelper_Security security = {
+		.security_policy = SOPC_SecurityPolicy_None_URI,
+		.security_mode = OpcUa_MessageSecurityMode_None,
+		.path_cert_auth = NULL,
+		.path_crl = NULL,
+		.path_cert_srv = NULL,
+		.path_cert_cli = NULL,
+		.path_key_cli = NULL,
+		.policyId = NULL,
+		.username = NULL,
+		.password = NULL,
+		.path_cert_x509_token = NULL,
+		.path_key_x509_token = NULL,
+	};
 	Logger *logger = Logger::getLogger();
 
 	logger->debug("Calling OPCUA::start");
@@ -921,6 +1023,7 @@ void OPCUA::start()
 			throw runtime_error("Unable to initialise ClientHelper library");
 		}
 
+		Logger::getLogger()->debug("SOPCInit Start");
 		m_init = true;
 	}
 
@@ -930,6 +1033,7 @@ void OPCUA::start()
 	SOPC_ClientHelper_GetEndpointsResult *endpoints = GetEndPoints(m_url.c_str());
 	if (endpoints == NULL)
 	{
+		Logger::getLogger()->debug("GetEndPoints Null");
 		return;
 	}
 
@@ -1173,7 +1277,13 @@ void OPCUA::start()
 
 	if (configOK && matched)
 	{
-		m_configurationId = SOPC_ClientHelper_CreateConfiguration(m_url.c_str(), &security, NULL);
+		SOPC_ClientHelper_EndpointConnection endPointConnection =
+		{
+			.endpointUrl = m_url.c_str(),
+			.serverUri = NULL,
+			.reverseConnectionConfigId = 0
+		};
+		m_configurationId = SOPC_ClientHelper_CreateConfiguration(&endPointConnection, &security, NULL);
 		logger->debug("ConfigurationId: %d", (int)m_configurationId);
 		if (m_configurationId <= 0)
 		{
@@ -1225,7 +1335,6 @@ void OPCUA::start()
 			if (m_connectionId > 0)
 			{
 				m_connected.store(true);
-				setRetryThread(false);
 			}
 			else if (m_connectionId == -1)
 			{
@@ -1245,13 +1354,13 @@ void OPCUA::start()
 		}
 	} // end if configOK && matched
 
-	FreeEndpointCollection(endpoints);
+	SOPC_ClientHelper_GetEndpointsResult_Free(&endpoints);
 
 	if (m_connected.load())
 	{
 		logger->info("Successfully connected to OPC/UA Server: %s", m_url.c_str());
 		subscribe();
-		getParents();
+		// getParents();
 		resolveDuplicateBrowseNames();
 	}
 	else
@@ -1267,56 +1376,31 @@ void OPCUA::stop()
 {
 	Logger::getLogger()->debug("Calling OPCUA::stop");
 	m_stopped.store(true);
+	m_readyForData.store(false);
+	setRetryThread(false);
 	if (m_connected.load())
 	{
-		SOPC_ClientHelper_Unsubscribe(m_connectionId);
-		SOPC_ClientHelper_Disconnect(m_connectionId);
+		// S2OPC Toolkit issue: calling SOPC_ClientHelper_Unsubscribe returns error -100 (operation failed)
+		// and SOPC_ClientHelper_Disconnect returns -3 (already closed connection).
+		// For now, call only SOPC_ClientHelper_Disconnect will be unsubscribe first.
+		// SOPC_ClientHelper_Disconnect by itself returns 0 (operation succeeded).
+		// int res = SOPC_ClientHelper_Unsubscribe(m_connectionId);
+		// Logger::getLogger()->debug("SOPC_ClientHelper_Unsubscribe: %d", res);
+		int res = SOPC_ClientHelper_Disconnect(m_connectionId);
+		Logger::getLogger()->debug("SOPC_ClientHelper_Disconnect: %d", res);
 		m_connectionId = 0;
 		m_connected.store(false);
 	}
 	if (m_init)
 	{
+		Logger::getLogger()->debug("SOPCInit Stop");
 		SOPC_ClientHelper_Finalize();
 		SOPC_CommonHelper_Clear();
 		m_init = false;
 	}
-	// Cleanup memory
-	if (m_path_cert_auth)
-	{
-		free(m_path_cert_auth);
-		m_path_cert_auth = NULL;
-	}
-	if (m_path_cert_auth)
-	{
-		free(m_path_cert_auth);
-		m_path_cert_auth = NULL;
-	}
-	if (m_path_crl)
-	{
-		free(m_path_crl);
-		m_path_crl = NULL;
-	}
-	if (m_path_cert_srv)
-	{
-		free(m_path_cert_srv);
-		m_path_cert_srv = NULL;
-	}
-	if (m_path_cert_cli)
-	{
-		free(m_path_cert_cli);
-		m_path_cert_cli = NULL;
-	}
-	if (m_path_key_cli)
-	{
-		free(m_path_key_cli);
-		m_path_key_cli = NULL;
-	}
-	if (m_traceFile)
-	{
-		free(m_traceFile);
-		m_traceFile = NULL;
-	}
-
+	clearData();
+	clearConfig();
+	Logger::getLogger()->info("Total Data Values sent: %lu Total Overflows:  %lu", m_numOpcUaValues, m_numOpcUaOverflows);
 	Logger::getLogger()->debug("Leaving OPCUA::stop");
 }
 
@@ -1364,8 +1448,15 @@ SOPC_ClientHelper_GetEndpointsResult *OPCUA::GetEndPoints(const char *endPointUr
 	SOPC_ClientHelper_GetEndpointsResult *endpoints = NULL;
 	try
 	{
-		int res = SOPC_ClientHelper_GetEndpoints(endPointUrl, &endpoints);
-		if (res == 0)
+		SOPC_ClientHelper_EndpointConnection endPointConnection =
+		{
+			.endpointUrl = endPointUrl,
+			.serverUri = NULL,
+			.reverseConnectionConfigId = 0
+		};
+		int res = SOPC_ClientHelper_GetEndpoints(&endPointConnection, &endpoints);
+		
+		if ((res == 0) && (endpoints != NULL))
 		{
 			logger->debug("OPC/UA Server has %d endpoints\n", endpoints->nbOfEndpoints);
 
@@ -1394,6 +1485,7 @@ SOPC_ClientHelper_GetEndpointsResult *OPCUA::GetEndPoints(const char *endPointUr
 			// If this is not done, an S2OPCUA background thread will throw an exception that we can't catch.
 			if (m_init)
 			{
+				Logger::getLogger()->debug("SOPCInit GetEndpoints Stop");
 				SOPC_ClientHelper_Finalize();
 				SOPC_CommonHelper_Clear();
 				m_init = false;
@@ -1444,12 +1536,18 @@ OPCUA::Node::Node(uint32_t conn, const string &nodeId) : m_nodeID(nodeId)
 			m_browseName = (char *)variant.Value.Qname->Name.Data;
 		SOPC_Variant classVariant = values[2].Value;
 		m_nodeClass = (OpcUa_NodeClass)classVariant.Value.Int32;
+		SOPC_ClientHelper_ReadResults_Free(3, values);
 	}
 	else
 	{
 		Logger::getLogger()->error("Failed to read Node \"%s\", %d", nodeId.c_str(), res);
 		throw runtime_error("Failed to read node");
 	}
+}
+
+OPCUA::Node::Node(const string &nodeId, const std::string& BrowseName) : m_nodeID(nodeId), m_browseName(BrowseName)
+{
+	m_nodeClass = OpcUa_NodeClass_Variable;
 }
 
 /**
@@ -1472,29 +1570,41 @@ void OPCUA::Node::duplicateBrowseName()
 void OPCUA::browse(const string &nodeid, vector<string> &variables)
 {
 	int res;
+	Node *parentNode = NULL;
 
 	SOPC_ClientHelper_BrowseRequest browseRequest;
-	SOPC_ClientHelper_BrowseResult browseResult;
+	SOPC_ClientHelper_BrowseResult browseResult =
+	{
+		.statusCode = SOPC_STATUS_NOK,
+		.nbOfReferences = 0,
+		.references = NULL
+	};
 
 	browseRequest.nodeId = (char *)nodeid.c_str();			 // Root/Objects/
 	browseRequest.direction = OpcUa_BrowseDirection_Forward; // forward
 	browseRequest.referenceTypeId = "";						 // all reference types
 	browseRequest.includeSubtypes = true;
 
-	Logger::getLogger()->debug("Browse '%s'", browseRequest.nodeId);
+	Logger::getLogger()->info("Browsing '%s'", browseRequest.nodeId);
 	/* Browse specified node */
 	res = SOPC_ClientHelper_Browse(m_connectionId, &browseRequest, 1, &browseResult);
 
 	if (res != 0)
 	{
-		Logger::getLogger()->info("Browse returned %d for Node %s", res, nodeid.c_str());
+		Logger::getLogger()->error("Browse returned error %d for Node '%s'", res, browseRequest.nodeId);
 		return;
 	}
-	Logger::getLogger()->debug("status: %d, nbOfResults: %d", browseResult.statusCode, browseResult.nbOfReferences);
+	Logger::getLogger()->info("Browse returned %d results", browseResult.nbOfReferences);
 
 	if (browseResult.nbOfReferences == 0)
 	{
 		Logger::getLogger()->error("Unable to locate the OPCUA Node '%s'", nodeid.c_str());
+	}
+	else
+	{
+		parentNode = new Node(m_connectionId, nodeid);
+		m_nodeObjects.insert(parentNode);
+		Logger::getLogger()->debug("Parent insert %s; %d items", parentNode->getNodeId().c_str(), m_nodeObjects.size());
 	}
 
 	for (int32_t i = 0; i < browseResult.nbOfReferences; i++)
@@ -1505,8 +1615,19 @@ void OPCUA::browse(const string &nodeid, vector<string> &variables)
 		}
 		if (browseResult.references[i].nodeClass == OpcUa_NodeClass_Variable)
 		{
+			if (strstr(browseResult.references[i].nodeId, "._") != NULL)
+			{
+				Logger::getLogger()->debug("Skipping Browse Node %s", browseResult.references[i].nodeId);
+				continue;
+			}
+
 			variables.push_back(browseResult.references[i].nodeId);
-			m_parents.insert(pair<string, string>(browseResult.references[i].nodeId, nodeid));
+			Node *node = new Node(browseResult.references[i].nodeId, browseResult.references[i].browseName);
+			m_nodes.insert(pair<string, Node *>(browseResult.references[i].nodeId, node));
+
+			// m_parents.insert(pair<string, string>(browseResult.references[i].nodeId, nodeid));
+			m_parentNodes.insert(pair<string, Node *>(browseResult.references[i].nodeId, parentNode));
+			Logger::getLogger()->debug("Parent of %s: %s", browseResult.references[i].nodeId, nodeid.c_str());
 		}
 		Logger::getLogger()->debug("Item #%d: NodeId %s, displayName %s, nodeClass %s",
 								   i, browseResult.references[i].nodeId,
@@ -1532,14 +1653,12 @@ void OPCUA::disconnect(const uint32_t connectionId)
 		Logger::getLogger()->warn("OPC/UA Client %d disconnected", (int)connectionId);
 
 	m_connected.store(false);
+	m_readyForData.store(false);
+
 	if (!m_stopped.load())
 	{
-		// This was not a user initiated stop.
-		// Stop the retry thread if it is running.
-		// Briefly set m_stopped to 'true' to allow the retry thread to exit.
-		m_stopped.store(true);
-		setRetryThread(false);
-		m_stopped.store(false);
+		// This was not a user initiated stop so start the retry thread
+		setRetryThread(true);
 	}
 }
 
@@ -1565,6 +1684,7 @@ void OPCUA::retry()
 		try
 		{
 			Logger::getLogger()->debug("OPCUA::retry before start");
+			clearData();
 			start();
 			Logger::getLogger()->debug("OPCUA::retry after start: Delay: %d Connected: %d Stopped: %d", delay, (int)m_connected.load(), (int)m_stopped.load());
 		}
@@ -1601,8 +1721,6 @@ void OPCUA::retry()
  */
 void OPCUA::setRetryThread(bool start)
 {
-	Logger::getLogger()->debug("OPCUA::setRetryThread(%d)", (int)start);
-
 	if (start)
 	{
 		if (m_background == NULL)

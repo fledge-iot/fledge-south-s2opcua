@@ -60,8 +60,8 @@ static const char *default_config = QUOTE({
     "reportingInterval" : {
             "description" : "The minimum reporting interval for data change notifications" ,
             "type" : "integer",
-            "default" : "1000",
-	    "minimum" : "100",
+            "default" : "0",
+	    "minimum" : "0",
             "displayName" : "Min Reporting Interval (millisec)",
             "order" : "5"
             },

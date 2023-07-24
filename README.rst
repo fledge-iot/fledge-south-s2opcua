@@ -132,7 +132,7 @@ To build S2OPC and its dependencies:
 .. code-block:: console
 
   $ cd ~/dev
-  $ git clone https://gitlab.com/systerel/S2OPC.git
+  $ git clone https://gitlab.com/systerel/S2OPC.git --branch S2OPC_Toolkit_1.4.1 --depth 1
   $ git clone https://github.com/fledge-iot/fledge-south-s2opcua.git
   $ cd S2OPC
   $ cp ../fledge-south-s2opcua/S2OPC.patch .
