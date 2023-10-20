@@ -1,7 +1,7 @@
 #ifndef _OPCUA_H
 #define _OPCUA_H
 /*
- * Fledge south service plugin
+ * Fledge S2OPCUA South service plugin
  *
  * Copyright (c) 2021 Dianomic Systems
  *
@@ -10,6 +10,8 @@
  * Author: Amandeep Singh Arora, Mark Riddoch
  */
 #include <string>
+#include <atomic>
+#include <config_category.h>
 #include <reading.h>
 #include <logger.h>
 #include <utils.h>
@@ -18,6 +20,7 @@
 #include <stdlib.h>
 #include <sys/time.h>
 #include <map>
+#include <set>
 extern "C" {
 #include "sopc_logger.h"
 #include "libs2opc_common_config.h"
@@ -43,14 +46,17 @@ class OpcUaClient;
 class OPCUA
 {
     public:
-        OPCUA(const std::string& url);
+        OPCUA();
         ~OPCUA();
+        void        clearConfig();
+        void        clearData();
+        void        parseConfig(ConfigCategory &config);
+        void        reconfigure(ConfigCategory &config);
         void        clearSubscription();
         void        addSubscription(const std::string& parent);
         int         addSubscriptions(std::vector<std::string> vec);
         void        getEndpoints();
         void        setAssetName(const std::string& name);
-        void        restart();
         void        newURL(const std::string& url) { m_url = url; };
         void        start();
         void        stop();
@@ -82,6 +88,7 @@ class OPCUA
 	{
 		public:
 				Node(uint32_t connId, const std::string& nodeId);
+				Node(const std::string& nodeId, const std::string& BrowseName);
 				std::string	getBrowseName() { return m_browseName; };
 				uint32_t	getType() { return m_type; };
 				std::string	getNodeId() { return m_nodeID; };
@@ -96,12 +103,14 @@ class OPCUA
     private:
         int         		subscribe();
 	void			browse(const std::string& nodeId, std::vector<std::string>&);
+    void            getNodeFullPath(const std::string &nodeId, std::string& path);
+    void            setRetryThread(bool start);
 	SOPC_ClientHelper_GetEndpointsResult
 				*GetEndPoints(const char *endPointUrl);
 	std::string		securityMode(OpcUa_MessageSecurityMode mode);
 	std::string		nodeClass(OpcUa_NodeClass nodeClass);
 	void			resolveDuplicateBrowseNames();
-	void			getParents();
+	// void			getParents();
 	int32_t			m_connectionId;
 	int32_t			m_configurationId;
         std::vector<std::string>
@@ -113,9 +122,11 @@ class OPCUA
         void                	(*m_ingest)(void *, Reading);
         void                	*m_data;
         std::mutex            	m_configMutex;
-        bool                	m_connected;
+        std::atomic<bool>       m_connected;
         long                	m_reportingInterval;
-        
+        unsigned long           m_numOpcUaValues;
+        unsigned long           m_numOpcUaOverflows;
+
         std::string         	m_secPolicy;
         OpcUa_MessageSecurityMode m_secMode;
 
@@ -136,12 +147,15 @@ class OPCUA
         bool                 	m_disableCertVerif;
         char                 	*m_traceFile;
         uint32_t             	m_maxKeepalive;
-	char			*m_path_cert_auth;
+        bool                    m_includePathAsMetadata;
+        std::string             m_metaDataName;
+	char		    *m_path_cert_auth;
 	char			*m_path_crl;
 	char			*m_path_cert_srv;
 	char			*m_path_cert_cli;
 	char			*m_path_key_cli;
-	bool			m_stopped;
+	std::atomic<bool> m_stopped;
+	std::atomic<bool> m_readyForData;
 	std::thread		*m_background;
 	bool			m_init;
 	std::map<std::string, struct timeval>
@@ -149,10 +163,13 @@ class OPCUA
 	enum {
 		ASSET_NAME_SINGLE, ASSET_NAME_SINGLE_OBJ, ASSET_NAME_OBJECT, ASSET_NAME
 				} m_assetNaming;
-	std::map<std::string, std::string>
+	std::set<Node *> m_nodeObjects;
+    std::map<std::string, std::string>
 				m_parents;	// Map variable node id to parent node id
 	std::map<std::string, Node *>
 				m_parentNodes;
+	std::map<std::string, std::string>
+				m_fullPaths; 	// Map variable node id to full OPC UA path
 };
 
 #endif

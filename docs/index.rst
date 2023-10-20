@@ -1,5 +1,7 @@
 .. Images
 .. |opcua_1| image:: images/opcua_1.jpg
+.. |opcua_advanced| image:: images/opcua_advanced.jpg
+.. |opcua_security| image:: images/opcua_security.jpg
 .. |opcua_2| image:: images/opcua_2.jpg
 .. |opcua_3| image:: images/opcua_3.jpg
 .. |opcua_4| image:: images/opcua_4.jpg
@@ -35,11 +37,21 @@ A south service to collect OPC/UA data is created in the same way as any other s
 
   - Click on *Next* to configure the OPC/UA plugin
 
+The configuration parameters that can be set on this page are divided into a set of tabs;
+
+  - Default Configuration
+
+  - OPC UA Advanced
+
+  - OPC UA Security
+
+The default configuration tab is shown below
+
 +-----------+
 | |opcua_1| |
 +-----------+
 
-The configuration parameters that can be set on this page are;
+On this tab a number of configuration parameters are available;
 
   - **Asset Name**: This is a prefix that will be applied to all assets that are created by this plugin. The OPC/UA plugin creates a separate asset for each data item read from the OPC/UA server. This is done since the OPC/UA server will deliver changes to individual data items only. Combining these into a complex asset would result in assets that do only contain one of many data points in each update. This can cause upstream systems problems with the every changing asset structure.
 
@@ -71,6 +83,26 @@ The configuration parameters that can be set on this page are;
     | |opcua_2| |
     +-----------+
 
+The OPC UA Advanced tab allows advanced configuration parameters to be set.
+
++------------------+
+| |opcua_advanced| |
++------------------+
+
+  - **Include Full OPC UA Path as meta data**: If enabled, the full OPC UA path will be added to every reading as a separate datapoint.
+    The path is constructed using the Browse Name of every Node in the path from the OPC UA standard *Objects* folder down to the subscribed Node.
+    The delimiter between path segments is the forward slash ("/").
+    The path always begins with a forward slash.
+    The path does not include the *Objects* folder or the subscribed Node.
+  - **Full OPC UA Path meta data name**: The data point name to use when adding the full OPC UA path to every reading. Default is *OPCUAPath*.
+  - **Debug Trace File**: Enable the S2OPCUA OPCUA Toolkit trace file for debugging. If enabled, log files will appear in the directory */usr/local/fledge/data/logs*.
+
+The OPC UA Security tab contains a set of configuration items that is used for setting the security between the plugin and the OPC UA Server.
+
++------------------+
+| |opcua_security| |
++------------------+
+
   - **Security Mode**: Specify the OPC/UA security mode that will be used to communicate with the OPC/UA server.
 
     +-----------+
@@ -98,8 +130,6 @@ The configuration parameters that can be set on this page are;
   - **Client Private Key**: The name of the private key of the client application, that is, the private key the plugin will use. This must be a PEM format key file.
 
   - **Certificate Revocation List**: The name of the certificate authority's Certificate Revocation List. This is a DER format certificate. If using self-signed certificates this should be left blank.
-
-  - **Debug Trace File**: Enable the S2OPCUA OPCUA Toolkit trace file for debugging. If enabled, log files will appear in the directory */usr/local/fledge/data/logs*.
 
 Subscriptions
 -------------

@@ -1,5 +1,5 @@
 /*
- * Fledge south plugin.
+ * Fledge S2OPCUA South service plugin.
  *
  * Copyright (c) 2018 Dianomic Systems
  *
@@ -16,7 +16,6 @@
 #include <string>
 #include <logger.h>
 #include <plugin_exception.h>
-#include <config_category.h>
 #include <rapidjson/document.h>
 #include <version.h>
 
@@ -25,10 +24,6 @@ typedef void (*INGEST_CB)(void *, Reading);
 using namespace std;
 
 #define PLUGIN_NAME    "s2opcua"
-
-extern "C" {
-void parse_config(OPCUA *opcua, ConfigCategory &config, bool reconf);
-};
 
 /**
  * Default configuration
@@ -65,7 +60,8 @@ static const char *default_config = QUOTE({
     "reportingInterval" : {
             "description" : "The minimum reporting interval for data change notifications" ,
             "type" : "integer",
-            "default" : "1000",
+            "default" : "0",
+	    "minimum" : "0",
             "displayName" : "Min Reporting Interval (millisec)",
             "order" : "5"
             },
@@ -168,13 +164,30 @@ static const char *default_config = QUOTE({
 	    "group" : "OPC UA Security",
             "validity": " securityMode == \"Sign\" || securityMode == \"SignAndEncrypt\" "
             },
+    "parentPathMetadata" : {
+            "description" : "Include full OPC UA path as meta data" ,
+            "type" : "boolean",
+            "default" : "false",
+            "displayName" : "Include Full OPC UA Path as meta data",
+	    "group" : "OPC UA Advanced",
+            "order" : "17"
+            },
+    "parentPath" : {
+            "description" : "Name for Full OPC UA Path meta data, if enabled" ,
+            "type" : "string",
+            "default" : "OPCUAPath",
+            "displayName" : "Full OPC UA Path meta data name",
+	    "group" : "OPC UA Advanced",
+            "order" : "18",
+            "validity": " parentPathMetadata == \"true\" "
+            },
     "traceFile" : {
             "description" : "Enable trace file for debugging" ,
             "type" : "boolean",
             "default" : "false",
             "displayName" : "Debug Trace File",
 	    "group" : "OPC UA Advanced",
-            "order" : "17"
+            "order" : "19"
             }
     });
 
@@ -206,166 +219,41 @@ PLUGIN_INFORMATION *plugin_info()
 
 /**
  * Initialise the plugin, called to get the plugin handle
+ *
+ * @param config    Plugin instance configuration
+ * @return          Plugin handle
  */
 PLUGIN_HANDLE plugin_init(ConfigCategory *config)
 {
-OPCUA    *opcua;
-string    url;
-
-
-    if (config->itemExists("url"))
-    {
-        url = config->getValue("url");
-        opcua = new OPCUA(url);
-    }
-    else
-    {
-        Logger::getLogger()->fatal("OPC UA plugin is missing a URL");
-        throw exception();
-    }
-    parse_config(opcua, *config, false);
-
+    OPCUA *opcua = new OPCUA();
+    opcua->parseConfig(*config);
     return (PLUGIN_HANDLE)opcua;
 }
 
 /**
- * Parse configuration
- */
-void parse_config(OPCUA *opcua, ConfigCategory &config, bool reconf)
-{
-    if (reconf==true && config.itemExists("url"))
-    {
-        string url = config.getValue("url");
-        opcua->newURL(url);
-    }
-
-    if (config.itemExists("asset"))
-    {
-        opcua->setAssetName(config.getValue("asset"));
-    }
-
-    if (config.itemExists("assetNaming"))
-    {
-        opcua->setAssetNaming(config.getValue("assetNaming"));
-    }
-
-    if (config.itemExists("reportingInterval"))
-    {
-        long val = strtol(config.getValue("reportingInterval").c_str(), NULL, 10);
-        opcua->setReportingInterval(val);
-    }
-    else
-    {
-        opcua->setReportingInterval(100);
-    }
-
-    if (config.itemExists("subscription"))
-    {
-        // Now add the subscription data
-        string map = config.getValue("subscription");
-        rapidjson::Document doc;
-        doc.Parse(map.c_str());
-        if (!doc.HasParseError())
-        {
-            opcua->clearSubscription();
-            if (doc.HasMember("subscriptions") && doc["subscriptions"].IsArray())
-            {
-                const rapidjson::Value& subs = doc["subscriptions"];
-                for (rapidjson::SizeType i = 0; i < subs.Size(); i++)
-                {
-                    Logger::getLogger()->info("%s: Adding subscription for node id %d = '%s'", reconf?"RECONF":"INIT", i, subs[i].GetString());
-                    opcua->addSubscription(subs[i].GetString());
-                }
-            }
-            else
-            {
-                Logger::getLogger()->fatal("OPC UA plugin is missing a subscriptions array");
-                throw exception();
-            }
-        }
-    }
-
-    if (config.itemExists("securityMode"))
-    {
-        opcua->setSecMode(config.getValue("securityMode"));
-    }
-
-    std::string secPolicy;
-    if (config.itemExists("securityPolicy"))
-    {
-        secPolicy = config.getValue("securityPolicy");
-        if(secPolicy.compare("None")==0 || secPolicy.compare("Basic256")==0 || secPolicy.compare("Basic256Sha256")==0)
-            opcua->setSecPolicy(secPolicy);
-        else
-            throw exception();
-    }
-
-    if (config.itemExists("userAuthPolicy"))
-    {
-        std::string authPolicy = config.getValue("userAuthPolicy");
-        opcua->setAuthPolicy(authPolicy);
-    }
-
-    if (config.itemExists("username"))
-    {
-        opcua->setUsername(config.getValue("username"));
-    }
-
-    if (config.itemExists("password"))
-    {
-        opcua->setPassword(config.getValue("password"));
-    }
-
-    if (config.itemExists("caCert"))
-    {
-        opcua->setCaCert(config.getValue("caCert"));
-    }
-
-    if (config.itemExists("serverCert"))
-    {
-        opcua->setServerCert(config.getValue("serverCert"));
-    }
-
-    if (config.itemExists("clientCert"))
-    {
-        opcua->setClientCert(config.getValue("clientCert"));
-    }
-
-    if (config.itemExists("clientKey"))
-    {
-        opcua->setClientKey(config.getValue("clientKey"));
-    }
-
-    if (config.itemExists("caCrl"))
-    {
-        opcua->setRevocationList(config.getValue("caCrl"));
-    }
-
-    if (config.itemExists("traceFile"))
-    {
-        opcua->setTraceFile(config.getValue("traceFile"));
-    }
-}
-
-/**
  * Start the Async handling for the plugin
+ *
+ * @param handle        The plugin handle
  */
 void plugin_start(PLUGIN_HANDLE *handle)
 {
-    OPCUA *opcua = (OPCUA *)handle;
-
     if (!handle)
         return;
-    
+
+    OPCUA *opcua = (OPCUA *)handle;
     opcua->start();
 }
 
 /**
  * Register ingest callback
+ *
+ * @param handle    The plugin handle
+ * @param cb        Callback function pointer
+ * @param data      Callback data pointer
  */
 void plugin_register_ingest(PLUGIN_HANDLE *handle, INGEST_CB cb, void *data)
 {
-OPCUA *opcua = (OPCUA *)handle;
+    OPCUA *opcua = (OPCUA *)handle;
 
     if (!handle)
         throw new exception();
@@ -373,40 +261,38 @@ OPCUA *opcua = (OPCUA *)handle;
 }
 
 /**
- * Poll for a plugin reading
+ * Poll for a plugin reading (not used)
+ *
+ * @param handle     The plugin handle
  */
 Reading plugin_poll(PLUGIN_HANDLE *handle)
 {
-OPCUA *opcua = (OPCUA *)handle;
-
+    OPCUA *opcua = (OPCUA *)handle;
     throw runtime_error("OPC UA is an async plugin, poll should not be called");
 }
 
 /**
  * Reconfigure the plugin
  *
+ * @param handle     The plugin handle
+ * @param newConfig  Updated configuration as a JSON string
  */
-void plugin_reconfigure(PLUGIN_HANDLE *handle, string& newConfig)
+void plugin_reconfigure(PLUGIN_HANDLE *handle, string &newConfig)
 {
-ConfigCategory    config("new", newConfig);
-OPCUA        *opcua = (OPCUA *)*handle;
-
-    opcua->stop();
-    parse_config(opcua, config, true);
-    Logger::getLogger()->info("OPC UA plugin restart in progress...");
-    opcua->start();
-    Logger::getLogger()->info("OPC UA plugin restarted after reconfigure");
+    ConfigCategory config("new", newConfig);
+    OPCUA *opcua = (OPCUA *)*handle;
+    opcua->reconfigure(config);
 }
 
 /**
  * Shutdown the plugin
+ *
+ * @param handle   The plugin handle
  */
 void plugin_shutdown(PLUGIN_HANDLE *handle)
 {
-OPCUA *opcua = (OPCUA *)handle;
-
+    OPCUA *opcua = (OPCUA *)handle;
     opcua->stop();
     delete opcua;
 }
 };
-
