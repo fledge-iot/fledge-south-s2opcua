@@ -94,6 +94,8 @@ class OPCUA
 				std::string	getNodeId() { return m_nodeID; };
 				OpcUa_NodeClass	getNodeClass() { return m_nodeClass; };
 				void		duplicateBrowseName();
+
+				static bool getNodeAttr(uint32_t conn, const string &nodeId, std::string &browseName, OpcUa_NodeClass &nodeClass);
 		private:
 				const std::string	m_nodeID;
 				std::string		m_browseName;
@@ -110,6 +112,9 @@ class OPCUA
 	std::string		securityMode(OpcUa_MessageSecurityMode mode);
 	std::string		nodeClass(OpcUa_NodeClass nodeClass);
 	void			resolveDuplicateBrowseNames();
+	bool 			checkFiltering(std::string browseName, OpcUa_NodeClass nodeClass);
+	bool 			checkNode(std::string nodeStr);
+	
 	// void			getParents();
 	int32_t			m_connectionId;
 	int32_t			m_configurationId;
@@ -170,6 +175,59 @@ class OPCUA
 				m_parentNodes;
 	std::map<std::string, std::string>
 				m_fullPaths; 	// Map variable node id to full OPC UA path
+
+	bool				m_filterEnabled;
+	std::string			m_filterRegex;
+
+	enum NodeFilterScope {
+		SCOPE_OBJECT=1,
+		SCOPE_VARIABLE,
+		SCOPE_OBJECT_VARIABLE,
+		SCOPE_INVALID=0xff
+		};
+	NodeFilterScope		m_filterScope;
+
+	enum NodeFilterAction {
+		INCLUDE_NODES=1,
+		EXCLUDE_NODES,
+		ACTION_INVALID=0xff			
+		};
+	NodeFilterAction	m_filterAction;
+
+	bool getFilterEnabled() { return m_filterEnabled; }
+	void setFilterEnabled(bool val) { m_filterEnabled = val; }
+
+	std::string getFilterRegex() { return m_filterRegex; }
+	void setFilterRegex(std::string val) { m_filterRegex = val; }
+
+	NodeFilterScope getFilterScope() { return m_filterScope; }
+	NodeFilterScope setFilterScope(std::string val)
+	{
+		if(val.compare("Object")==0)
+			m_filterScope = NodeFilterScope::SCOPE_OBJECT;
+		else if(val.compare("Variable")==0)
+			m_filterScope = NodeFilterScope::SCOPE_VARIABLE;
+		else if(val.compare("Object and Variable")==0)
+			m_filterScope = NodeFilterScope::SCOPE_OBJECT_VARIABLE;
+		else
+			return NodeFilterScope::SCOPE_INVALID;
+
+		return m_filterScope;
+	}
+
+	NodeFilterAction getFilterAction() { return m_filterAction; }
+	NodeFilterAction setFilterAction(std::string val)
+	{
+		if(val.compare("Include nodes")==0)
+			m_filterAction = NodeFilterAction::INCLUDE_NODES;
+		else if(val.compare("Exclude nodes")==0)
+			m_filterAction = NodeFilterAction::EXCLUDE_NODES;
+		else
+			return NodeFilterAction::ACTION_INVALID;
+
+		return m_filterAction;
+	}
+	
 };
 
 #endif
