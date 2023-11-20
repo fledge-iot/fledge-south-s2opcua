@@ -1829,27 +1829,32 @@ void OPCUA::browse(const string &nodeid, vector<string> &variables)
 			// Filtering: Code flow is here since parent node is included, now:
 			// If filterScope is SCOPE_OBJECT, then children are included without check, if they have OpcUa_NodeClass_Variable nodeClass. 
 			// And if filterScope is SCOPE_OBJECT_VARIABLE, then children are checked against filtering config for inclusion
-
-			OPCUA::NodeFilterScope filterScope = getFilterScope();
-
-			bool processNode;
-			if (filterScope == OPCUA::NodeFilterScope::SCOPE_OBJECT)
-				processNode = true;
-			else if (filterScope == OPCUA::NodeFilterScope::SCOPE_OBJECT_VARIABLE)
-				processNode = checkFiltering(browseResult.references[i].browseName, browseResult.references[i].nodeClass);
-			else
-				Logger::getLogger()->warn("Code flow shouldn't have reached this statement: NodeId=%s, filterScope=%s", 
-								browseResult.references[i].nodeId, getFilterScopeStr().c_str());
-			
-			if(!processNode)
+			if(getFilterEnabled())
 			{
-				Logger::getLogger()->warn("Skipping Browse Node '%s' with browseName '%s', because of filtering config", 
-								browseResult.references[i].nodeId, browseResult.references[i].browseName);
-				continue;
+				OPCUA::NodeFilterScope filterScope = getFilterScope();
+
+				bool processNode;
+				if (filterScope == OPCUA::NodeFilterScope::SCOPE_OBJECT)
+					processNode = true;
+				else if (filterScope == OPCUA::NodeFilterScope::SCOPE_OBJECT_VARIABLE)
+					processNode = checkFiltering(browseResult.references[i].browseName, browseResult.references[i].nodeClass);
+				else
+					Logger::getLogger()->warn("Code flow shouldn't have reached this statement: NodeId=%s, filterScope=%s", 
+									browseResult.references[i].nodeId, getFilterScopeStr().c_str());
+				
+				if(!processNode)
+				{
+					Logger::getLogger()->warn("Skipping Browse Node '%s' with browseName '%s', because of filtering config", 
+									browseResult.references[i].nodeId, browseResult.references[i].browseName);
+					continue;
+				}
+				else
+					Logger::getLogger()->info("Browse Node '%s' with browseName '%s', survived filtering", 
+									browseResult.references[i].nodeId, browseResult.references[i].browseName);
 			}
 			else
-				Logger::getLogger()->info("Browse Node '%s' with browseName '%s', survived filtering", 
-								browseResult.references[i].nodeId, browseResult.references[i].browseName);
+				Logger::getLogger()->info("Browse Node '%s' with browseName '%s', filtering disabled", 
+									browseResult.references[i].nodeId, browseResult.references[i].browseName);
 
 			variables.push_back(browseResult.references[i].nodeId);
 			Node *node = new Node(browseResult.references[i].nodeId, browseResult.references[i].browseName);
