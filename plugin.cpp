@@ -198,7 +198,7 @@ static const char *default_config = QUOTE({
 		"group" : "Filtering"
 		},
 	"filterScope" : {
-		"description" : "Specify whether filter is for inclusion or exclusion",
+		"description" : "Specify the scope of the filter",
 		"type": "enumeration",
 		"options":["Object", "Variable", "Object and Variable"],
 		"default" : "Variable",

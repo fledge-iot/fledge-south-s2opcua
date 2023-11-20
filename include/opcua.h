@@ -110,7 +110,7 @@ class OPCUA
 	SOPC_ClientHelper_GetEndpointsResult
 				*GetEndPoints(const char *endPointUrl);
 	std::string		securityMode(OpcUa_MessageSecurityMode mode);
-	std::string		nodeClass(OpcUa_NodeClass nodeClass);
+	std::string		nodeClassStr(OpcUa_NodeClass nodeClass);
 	void			resolveDuplicateBrowseNames();
 	bool 			checkFiltering(std::string browseName, OpcUa_NodeClass nodeClass);
 	bool 			checkNode(std::string nodeStr);
@@ -215,6 +215,17 @@ class OPCUA
 		return m_filterScope;
 	}
 
+	std::string getFilterScopeStr()
+	{
+		switch(m_filterScope)
+		{
+			case NodeFilterScope::SCOPE_OBJECT: return "Object";
+			case NodeFilterScope::SCOPE_VARIABLE: return "Variable";
+			case NodeFilterScope::SCOPE_OBJECT_VARIABLE: return "Object and Variable";
+			default: return "Invalid scope";
+		}
+	}
+
 	NodeFilterAction getFilterAction() { return m_filterAction; }
 	NodeFilterAction setFilterAction(std::string val)
 	{
@@ -226,6 +237,15 @@ class OPCUA
 			return NodeFilterAction::ACTION_INVALID;
 
 		return m_filterAction;
+	}
+	std::string getFilterActionStr()
+	{
+		switch(m_filterAction)
+		{
+			case NodeFilterAction::INCLUDE_NODES: return "Include nodes";
+			case NodeFilterAction::EXCLUDE_NODES: return "Exclude nodes";
+			default: return "Invalid action";
+		}
 	}
 	
 };
