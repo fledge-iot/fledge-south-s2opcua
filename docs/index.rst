@@ -83,6 +83,19 @@ On this tab a number of configuration parameters are available;
     | |opcua_2| |
     +-----------+
 
+The Filtering tab allows setting the filtering config to include/exclude the OPCUA nodes to subscribe to.
+
++-------------------+
+| |opcua_filtering| |
++-------------------+
+
+  - **Regular expression**: The regular expression to be matched against the Browse Name of the node. The regex has to match the browse name completely.
+  - **Scope**: Specifies scope of the node filtering. There are 3 options here:
+    - Object: This indicates that matching has to be done against the browse name of object nodes. Variable nodes under matching objects are included anyway without any further checks.
+    - Variable: This option indicates that all variable nodes are checked against the filtering configuration. Object nodes are always traversed.
+    - Object and Variable: This option is a combination of above 2 options. Object nodes that don't have a matching browse name are not traversed.
+  - **Filter action**: Specifies whether a matching node is to be included or not.
+
 The OPC UA Advanced tab allows advanced configuration parameters to be set.
 
 +------------------+
