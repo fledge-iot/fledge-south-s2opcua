@@ -112,8 +112,8 @@ class OPCUA
 	std::string		securityMode(OpcUa_MessageSecurityMode mode);
 	std::string		nodeClassStr(OpcUa_NodeClass nodeClass);
 	void			resolveDuplicateBrowseNames();
-	bool 			checkFiltering(std::string browseName, OpcUa_NodeClass nodeClass);
-	bool 			checkNode(std::string nodeStr);
+	bool 			checkFiltering(std::string browseName, OpcUa_NodeClass nodeClass, bool isDirectlySubscribed=false);
+	bool 			checkNode(std::string nodeStr, bool isDirectlySubscribed=false);
 	
 	// void			getParents();
 	int32_t			m_connectionId;
