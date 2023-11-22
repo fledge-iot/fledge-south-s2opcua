@@ -1819,7 +1819,7 @@ void OPCUA::browse(const string &nodeid, vector<string> &variables)
 			bool processNode = checkFiltering(browseResult.references[i].browseName, browseResult.references[i].nodeClass);
 			if(!processNode)
 			{
-				Logger::getLogger()->warn("%s:%d: Skipping Browse Node '%s' with browseName '%s', because of filtering config",
+				Logger::getLogger()->info("%s:%d: Skipping Browse Node '%s' with browseName '%s', because of filtering config",
 								__FUNCTION__, __LINE__, browseResult.references[i].nodeId, browseResult.references[i].browseName);
 				continue;
 			}
@@ -1859,7 +1859,7 @@ void OPCUA::browse(const string &nodeid, vector<string> &variables)
 				
 				if(!processNode)
 				{
-					Logger::getLogger()->warn("Skipping Browse Node '%s' with browseName '%s', because of filtering config",
+					Logger::getLogger()->info("Skipping Browse Node '%s' with browseName '%s', because of filtering config",
 									browseResult.references[i].nodeId, browseResult.references[i].browseName);
 					continue;
 				}
