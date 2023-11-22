@@ -934,7 +934,6 @@ int OPCUA::subscribe()
 		bool rv = Node::getNodeAttr(m_connectionId, *it, browseName, nodeClass);
 
 		bool processNode = true;  // include child node by default if they are variables
-		// NodeFilterScope filterScope = getFilterScope();
 		
 		// If parent node is being subscribed to, children variable nodes are also subscribed to
 		// And, if the child node is an object, it is evaluated independently as per configured filter
@@ -963,15 +962,16 @@ int OPCUA::subscribe()
 			{
 				node = new Node(m_connectionId, it->c_str());
 				m_nodes.insert(pair<string, Node *>(*it, node));
-				logger->info("Subscribe to Node %s, BrowseName(a) %s", node->getNodeId().c_str(), node->getBrowseName().c_str());
+				logger->info("New entry: Subscribe to Node %s, BrowseName(a) %s", node->getNodeId().c_str(), node->getBrowseName().c_str());
 			}
 			else
 			{
 				node = findItr->second;
-				logger->info("Subscribe to Node %s, BrowseName(b) %s", node->getNodeId().c_str(), node->getBrowseName().c_str());
+				logger->info("Existing entry: Subscribe to Node %s, BrowseName(b) %s", node->getNodeId().c_str(), node->getBrowseName().c_str());
 			}
 
 			node_ids[i++] = strdup((char *)it->c_str());
+			logger->info("****** Added node_ids[%d]='%s' ", i-1, node_ids[i-1]);
 
 			if (m_includePathAsMetadata)
 			{
@@ -1009,7 +1009,7 @@ int OPCUA::subscribe()
 			done = true;
 		}
 
-		logger->debug("MI_AddMonitoredItems_Call: %d %d %d", i, numNodeIds, totalMonitoredItems);
+		logger->info("MI_AddMonitoredItems_Call: i=%d, numNodeIds=%d, totalMonitoredItems=%d, m_nodes.size()=%d", i, numNodeIds, totalMonitoredItems, m_nodes.size());
 		res = SOPC_ClientHelper_AddMonitoredItems(m_connectionId, &node_ids[i], numNodeIds, NULL);
 		logger->debug("MI_AddMonitoredItems_Done: Res: %d", res);
 		callCount++;
@@ -1871,9 +1871,16 @@ void OPCUA::browse(const string &nodeid, vector<string> &variables)
 				Logger::getLogger()->info("Browse Node '%s' with browseName '%s', filtering disabled", 
 									browseResult.references[i].nodeId, browseResult.references[i].browseName);
 
-			variables.push_back(browseResult.references[i].nodeId);
-			Node *node = new Node(browseResult.references[i].nodeId, browseResult.references[i].browseName);
-			m_nodes.insert(pair<string, Node *>(browseResult.references[i].nodeId, node));
+			
+			if (m_nodes.find(browseResult.references[i].nodeId) == m_nodes.end())
+			{
+				variables.push_back(browseResult.references[i].nodeId);
+				Node *node = new Node(browseResult.references[i].nodeId, browseResult.references[i].browseName);
+				m_nodes.insert(pair<string, Node *>(browseResult.references[i].nodeId, node));
+				Logger::getLogger()->info("New entry: Subscribe to Node %s, BrowseName(a) %s", browseResult.references[i].nodeId, browseResult.references[i].browseName);
+			}
+			else
+				Logger::getLogger()->info("Existing entry: Subscribe to Node %s, BrowseName(b) %s", browseResult.references[i].nodeId, browseResult.references[i].browseName);
 
 			// m_parents.insert(pair<string, string>(browseResult.references[i].nodeId, nodeid));
 			m_parentNodes.insert(pair<string, Node *>(browseResult.references[i].nodeId, parentNode));
