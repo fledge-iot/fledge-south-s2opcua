@@ -859,7 +859,7 @@ bool OPCUA::checkNode(std::string nodeId, bool isDirectlySubscribed)
 	if(getFilterEnabled())
 	{
 		bool rv = Node::getNodeAttr(m_connectionId, nodeId, browseName, nodeClass);
-		Logger::getLogger()->info("Node '%s' has browsename %s and nodeClass %s", nodeId.c_str(), browseName.c_str(), 
+		Logger::getLogger()->debug("Node '%s' has browsename %s and nodeClass %s", nodeId.c_str(), browseName.c_str(), 
 										nodeClassStr(nodeClass).c_str());
 		if (!rv)
 		{
@@ -969,16 +969,16 @@ int OPCUA::subscribe()
 			{
 				node = new Node(*it, browseName);
 				m_nodes.insert(pair<string, Node *>(*it, node));
-				logger->info("New entry: Subscribe to Node %s, BrowseName(a) %s", node->getNodeId().c_str(), node->getBrowseName().c_str());
+				logger->debug("New entry: Subscribe to Node %s, BrowseName(a) %s", node->getNodeId().c_str(), node->getBrowseName().c_str());
 			}
 			else
 			{
 				node = findItr->second;
-				logger->info("Existing entry: Subscribe to Node %s, BrowseName(b) %s", node->getNodeId().c_str(), node->getBrowseName().c_str());
+				logger->debug("Existing entry: Subscribe to Node %s, BrowseName(b) %s", node->getNodeId().c_str(), node->getBrowseName().c_str());
 			}
 
 			node_ids[i++] = strdup((char *)it->c_str());
-			logger->info("****** Added node_ids[%d]='%s' ", i-1, node_ids[i-1]);
+			logger->debug("****** Added node_ids[%d]='%s' ", i-1, node_ids[i-1]);
 
 			if (m_includePathAsMetadata)
 			{
@@ -2028,6 +2028,9 @@ string OPCUA::securityMode(OpcUa_MessageSecurityMode mode)
 
 /**
  * Return a string representation of a NodeClass
+ *
+ * @param scheme	 Node class enumeration value
+ * @return value	 Node class as a string
  */
 string OPCUA::nodeClassStr(OpcUa_NodeClass nodeClass)
 {
