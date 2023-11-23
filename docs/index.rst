@@ -83,20 +83,20 @@ On this tab a number of configuration parameters are available;
     | |opcua_2| |
     +-----------+
 
-The Filtering tab allows setting the filtering config to include/exclude the OPCUA nodes to subscribe to.
+The Filtering allows you to include or exclude OPCUA nodes using a regular expression to filter Browse Names.
 
 +-------------------+
 | |opcua_filtering| |
 +-------------------+
 
-  - **Regular expression**: The regular expression (regex) to be matched against the Browse Name of the node. The regex has to match the browse name completely.
+  - **Regular expression**: The regular expression (regex) to be matched against the Browse Name of the node. The regex has to match the Browse Name exactly.
   - **Scope**: Specifies scope of the node filtering. There are 3 options here:
-    - Object: This indicates that matching has to be done against the browse name of object nodes. Variable nodes under matching objects are included anyway without any further checks.
+    - Object: This indicates that matching has to be done against the Browse Name of object nodes. Variable nodes under matching objects are included anyway without any further checks.
     - Variable: This option indicates that all variable nodes are checked against the filtering configuration. Object nodes are always traversed.
-    - Object and Variable: This option is a combination of above 2 options. Object nodes that don't have a matching browse name are not traversed. And variables with matching browse name are included/excluded as per action field value.
+    - Object and Variable: This option is a combination of above 2 options. Object nodes that don't have a matching Browse Name are not traversed. And variables with matching Browse Name are included/excluded as per action field value.
     Note 1: The variable nodes mentioned explicitly under "OPCUA Object Subscriptions" are always subscribed to, irrespective of configured regex and action, when the filter scope is Object.
-    Note 2: The object nodes mentioned explicitly under "OPCUA Object Subscriptions" are always evaluated independently, even if the object node's any parent node up-the-hierarchy has been excluded.
-  - **Filter action**: Specifies whether a matching node is to be included or not.
+    Note 2: The object nodes mentioned explicitly under "OPCUA Object Subscriptions" are always evaluated independently, even if any parent node up-the-hierarchy has been excluded.
+  - **Filter action**: Specifies whether a matching node is to be included or excluded.
 
 The OPC UA Advanced tab allows advanced configuration parameters to be set.
 
