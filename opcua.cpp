@@ -459,6 +459,23 @@ void OPCUA::clearData()
 }
 
 /**
+ * Check regex validity
+ *
+ * @param	regex	Regular expression
+ * @return	bool	true if regex is valid, false otherwise
+ */
+bool OPCUA::isRegexValid(const std::string &regexp)
+{
+    try {
+        regex re(regexp);
+    }
+    catch (const std::regex_error& ) {
+        return false;
+    }
+    return true;
+}
+
+/**
  * Parse plugin configuration
  *
  * @param config	configuration information
@@ -607,7 +624,7 @@ void OPCUA::parseConfig(ConfigCategory &config)
 	if (config.itemExists("filterRegex"))
 	{
 		string val = config.getValue("filterRegex");
-		if (!val.empty())
+		if (!val.empty() & isRegexValid(val))
 		{
 			setFilterRegex(val);
 			setFilterEnabled(true);
@@ -784,7 +801,7 @@ bool OPCUA::checkFiltering(std::string browseName, OpcUa_NodeClass nodeClass, bo
 	// if filtering is disabled, always subscribe to given node
 	if(!getFilterEnabled())
 	{
-		Logger::getLogger()->info("%s:%d: FILTERING IS DISABLED", __FUNCTION__, __LINE__);
+		Logger::getLogger()->debug("Node '%s': FILTERING IS DISABLED", browseName.c_str());
 		return true;
 	}
 
@@ -794,20 +811,20 @@ bool OPCUA::checkFiltering(std::string browseName, OpcUa_NodeClass nodeClass, bo
 	if( (nodeClass == OpcUa_NodeClass_Variable) && isDirectlySubscribed && 
 				 (filterScope == OPCUA::NodeFilterScope::SCOPE_OBJECT) )
 	{
-		Logger::getLogger()->info("Bypassing filtering check in case of directly subscribed variables when filterScope is SCOPE_OBJECT");
+		Logger::getLogger()->debug("Node '%s': Bypassing filtering check in case of directly subscribed "
+									"variables when filterScope is SCOPE_OBJECT", browseName.c_str());
 		return true;
 	}
 
 	// No check is required in case of objects when filterScope is SCOPE_VARIABLE; just browse all objects
 	if( (nodeClass == OpcUa_NodeClass_Object) && (filterScope == OPCUA::NodeFilterScope::SCOPE_VARIABLE) )
 	{
-		Logger::getLogger()->info("Bypassing filtering check in case of objects when filterScope is SCOPE_VARIABLE");
+		Logger::getLogger()->debug("Node '%s': Bypassing filtering check in case of objects when filterScope"
+									" is SCOPE_VARIABLE", browseName.c_str());
 		return true;
 	}
 
 	bool includeNode = (getFilterAction() == OPCUA::NodeFilterAction::INCLUDE_NODES);
-	Logger::getLogger()->debug("getFilterAction()=%d, OPCUA::NodeFilterAction::INCLUDE_NODES=%d, includeNode=%s",
-									getFilterAction(), OPCUA::NodeFilterAction::INCLUDE_NODES, includeNode?"TRUE":"FALSE");
 	
 	bool scopeMatch = ((nodeClass == OpcUa_NodeClass_Object && 
 						(filterScope == OPCUA::NodeFilterScope::SCOPE_OBJECT || filterScope == OPCUA::NodeFilterScope::SCOPE_OBJECT_VARIABLE)) ||
@@ -818,7 +835,8 @@ bool OPCUA::checkFiltering(std::string browseName, OpcUa_NodeClass nodeClass, bo
 		string filterRegex = getFilterRegex();
 		regex re(filterRegex);
 		bool match = std::regex_match(browseName, re);
-		Logger::getLogger()->info("filterAction=%s, filterScope=%s, nodeClass=%s, scopeMatch=%s, browseName=%s, filterRegex=%s, match=%s, subscribe=%s",
+		Logger::getLogger()->debug("filterAction=%s, filterScope=%s, nodeClass=%s, scopeMatch=%s, browseName=%s,"
+									" filterRegex=%s, match=%s, subscribe=%s",
 										getFilterActionStr().c_str(), getFilterScopeStr().c_str(), nodeClassStr(nodeClass).c_str(), 
 										scopeMatch?"TRUE":"FALSE", browseName.c_str(), filterRegex.c_str(),
 										match?"TRUE":"FALSE", (includeNode == match)?"TRUE":"FALSE");
@@ -832,46 +850,13 @@ bool OPCUA::checkFiltering(std::string browseName, OpcUa_NodeClass nodeClass, bo
 	}
 	else
 	{
-		Logger::getLogger()->info("filterAction=%s, filterScope=%s, nodeClass=%s, scopeMatch=%s, browseName=%s, subscribe=%s",
+		Logger::getLogger()->debug("filterAction=%s, filterScope=%s, nodeClass=%s, scopeMatch=%s, browseName=%s, subscribe=%s",
 										getFilterActionStr().c_str(), getFilterScopeStr().c_str(), nodeClassStr(nodeClass).c_str(), 
 										scopeMatch?"TRUE":"FALSE", browseName.c_str(), (!includeNode)?"TRUE":"FALSE");
 		return !includeNode;
 		// scope mismatch - include - can't include
 		// scope mismatch - exclude - ok to include
 	}
-}
-
-
-/**
- * Returns whether Node is to be subscribed to, as per filtering config
- *
- * @param 	nodeId	OPCUA Node Id
- * @param 	isDirectlySubscribed	Is the node present in the subscription
- *                                    map in plugin config
- * @return	processNode	If true, node should be subscribed to
- */
-bool OPCUA::checkNode(std::string nodeId, bool isDirectlySubscribed)
-{
-	std::string browseName("");
-	OpcUa_NodeClass nodeClass = OpcUa_NodeClass_Unspecified;
-	
-	bool processNode = true;
-	if(getFilterEnabled())
-	{
-		bool rv = Node::getNodeAttr(m_connectionId, nodeId, browseName, nodeClass);
-		Logger::getLogger()->debug("Node '%s' has browsename %s and nodeClass %s", nodeId.c_str(), browseName.c_str(), 
-										nodeClassStr(nodeClass).c_str());
-		if (!rv)
-		{
-			Logger::getLogger()->warn("Cannot fetch node attributes for subscription '%s', cannot apply filtering, subscribing...", nodeId.c_str());
-			processNode = true;
-		}
-		else
-		{
-			processNode = checkFiltering(browseName, nodeClass, isDirectlySubscribed);
-		}
-	}
-	return processNode;
 }
 
 /**
@@ -900,7 +885,17 @@ int OPCUA::subscribe()
 	vector<string> variables;
 	for (auto it = m_subscriptions.cbegin(); it != m_subscriptions.cend(); it++)
 	{
-		bool processNode = checkNode(*it, true);
+		auto res = m_nodes.find(*it);
+		Node *node = NULL;
+		if (res == m_nodes.end())
+		{
+			node = new Node(m_connectionId, *it);
+			m_nodes[*it] = node;
+		}
+		else
+			node = res->second;
+		
+		bool processNode = checkFiltering(node->getBrowseName(), node->getNodeClass(), true);
 		if(!processNode)
 		{
 			logger->warn("Skipping subscription for node '%s' because of filtering config", it->c_str());
@@ -941,12 +936,23 @@ int OPCUA::subscribe()
 	memset((void *) node_ids, 0, variables.size() * sizeof(char *));
 
 	logger->info("Starting NodeId lookup for %d Variables", (int)variables.size());
+	int totalMonitoredItems = 0;
+	
 	int i = 0;
 	for (auto it = variables.cbegin(); it != variables.cend(); it++)
 	{
-		std::string browseName;
-		OpcUa_NodeClass nodeClass;
-		bool rv = Node::getNodeAttr(m_connectionId, *it, browseName, nodeClass);
+		auto res = m_nodes.find(*it);
+		Node *node = NULL;
+		if (res == m_nodes.end())
+		{
+			node = new Node(m_connectionId, *it);
+			m_nodes[*it] = node;
+		}
+		else
+			node = res->second;
+		
+		std::string browseName = node->getBrowseName();
+		OpcUa_NodeClass nodeClass = node->getNodeClass();
 
 		bool processNode = true;  // include child node by default if they are variables
 		
@@ -963,21 +969,8 @@ int OPCUA::subscribe()
 		
 		try
 		{
-			Node *node = NULL;
-			auto findItr = m_nodes.find(*it);
-			if (findItr == m_nodes.end())
-			{
-				node = new Node(*it, browseName);
-				m_nodes.insert(pair<string, Node *>(*it, node));
-				logger->debug("New entry: Subscribe to Node %s, BrowseName(a) %s", node->getNodeId().c_str(), node->getBrowseName().c_str());
-			}
-			else
-			{
-				node = findItr->second;
-				logger->debug("Existing entry: Subscribe to Node %s, BrowseName(b) %s", node->getNodeId().c_str(), node->getBrowseName().c_str());
-			}
-
 			node_ids[i++] = strdup((char *)it->c_str());
+			totalMonitoredItems++;
 			logger->debug("****** Added node_ids[%d]='%s' ", i-1, node_ids[i-1]);
 
 			if (m_includePathAsMetadata)
@@ -1000,7 +993,6 @@ int OPCUA::subscribe()
 		return res;
 	}
 
-	int totalMonitoredItems = m_nodes.size();
 	int actualMonitoredItems = 0;
 	int miBlockSize = 1000;
 	int callCount = 0;
@@ -1682,52 +1674,6 @@ SOPC_ClientHelper_GetEndpointsResult *OPCUA::GetEndPoints(const char *endPointUr
 }
 
 /**
- * Returns Browse Name and Node class for a given OPCUA NodeId
- *
- * @param 	conn	OPCUA Server connection id
- * @param	nodeId	OPCUA Node Id
- * @param 	browseName[out]	Browse Name
- * @param 	nodeClass[out]	Node class
- * @return	value	Whether the Node attribute query succeeded
- */
-bool OPCUA::Node::getNodeAttr(uint32_t conn, const string &nodeId, std::string &browseName, OpcUa_NodeClass &nodeClass)
-{
-	SOPC_ClientHelper_ReadValue readValue[3];
-	SOPC_DataValue values[3];
-
-	readValue[0].nodeId = (char *)nodeId.c_str();
-	readValue[0].attributeId = SOPC_AttributeId_BrowseName;
-	readValue[0].indexRange = NULL;
-	readValue[1].nodeId = (char *)nodeId.c_str();
-	readValue[1].attributeId = SOPC_AttributeId_DataType;
-	readValue[1].indexRange = NULL;
-	readValue[2].nodeId = (char *)nodeId.c_str();
-	readValue[2].attributeId = SOPC_AttributeId_NodeClass;
-	readValue[2].indexRange = NULL;
-
-	int res;
-	if ((res = SOPC_ClientHelper_Read(conn, readValue, 3, values)) == 0)
-	{
-		SOPC_Variant variant = values[0].Value;
-		if (variant.Value.Qname)
-			browseName = (char *)variant.Value.Qname->Name.Data;
-		SOPC_Variant classVariant = values[2].Value;
-		nodeClass = (OpcUa_NodeClass)classVariant.Value.Int32;
-		SOPC_ClientHelper_ReadResults_Free(3, values);
-		return true;
-	}
-	else
-	{
-		Logger::getLogger()->error("Failed to read Node \"%s\", %d", nodeId.c_str(), res);
-		browseName = "";
-		nodeClass = OpcUa_NodeClass::OpcUa_NodeClass_Unspecified;
-		return false;
-	}
-}
-
-
-
-/**
  * Construct a node class for the given nodeID
  *
  * @param conn		The connection to the OPCUA server
@@ -1876,20 +1822,16 @@ void OPCUA::browse(const string &nodeid, vector<string> &variables)
 					Logger::getLogger()->info("Browse Node '%s' with browseName '%s', survived filtering", 
 									browseResult.references[i].nodeId, browseResult.references[i].browseName);
 			}
-			else
-				Logger::getLogger()->info("Browse Node '%s' with browseName '%s', filtering disabled", 
-									browseResult.references[i].nodeId, browseResult.references[i].browseName);
-
 			
 			if (m_nodes.find(browseResult.references[i].nodeId) == m_nodes.end())
 			{
 				variables.push_back(browseResult.references[i].nodeId);
 				Node *node = new Node(browseResult.references[i].nodeId, browseResult.references[i].browseName);
-				m_nodes.insert(pair<string, Node *>(browseResult.references[i].nodeId, node));
-				Logger::getLogger()->info("New entry: Subscribe to Node %s, BrowseName(a) %s", browseResult.references[i].nodeId, browseResult.references[i].browseName);
+				m_nodes[browseResult.references[i].nodeId] = node;
+				Logger::getLogger()->debug("New entry: Subscribe to Node %s, BrowseName(a) %s", browseResult.references[i].nodeId, browseResult.references[i].browseName);
 			}
 			else
-				Logger::getLogger()->info("Existing entry: Subscribe to Node %s, BrowseName(b) %s", browseResult.references[i].nodeId, browseResult.references[i].browseName);
+				Logger::getLogger()->debug("Existing entry: Subscribe to Node %s, BrowseName(b) %s", browseResult.references[i].nodeId, browseResult.references[i].browseName);
 
 			// m_parents.insert(pair<string, string>(browseResult.references[i].nodeId, nodeid));
 			m_parentNodes.insert(pair<string, Node *>(browseResult.references[i].nodeId, parentNode));

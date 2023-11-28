@@ -50,6 +50,7 @@ class OPCUA
         ~OPCUA();
         void        clearConfig();
         void        clearData();
+        bool        isRegexValid(const std::string &regex);
         void        parseConfig(ConfigCategory &config);
         void        reconfigure(ConfigCategory &config);
         void        clearSubscription();
@@ -94,8 +95,6 @@ class OPCUA
 				std::string	getNodeId() { return m_nodeID; };
 				OpcUa_NodeClass	getNodeClass() { return m_nodeClass; };
 				void		duplicateBrowseName();
-
-				static bool getNodeAttr(uint32_t conn, const string &nodeId, std::string &browseName, OpcUa_NodeClass &nodeClass);
 		private:
 				const std::string	m_nodeID;
 				std::string		m_browseName;
