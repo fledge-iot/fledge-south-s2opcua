@@ -796,7 +796,7 @@ void OPCUA::clearSubscription()
  *                                    map in plugin config
  * @return	subscribeNode	If true, node should be subscribed to
  */
-bool OPCUA::checkFiltering(std::string browseName, OpcUa_NodeClass nodeClass, bool isDirectlySubscribed)
+bool OPCUA::checkFiltering(const std::string& browseName, OpcUa_NodeClass nodeClass, bool isDirectlySubscribed)
 {
 	// if filtering is disabled, always subscribe to given node
 	if(!getFilterEnabled())
@@ -951,15 +951,12 @@ int OPCUA::subscribe()
 		else
 			node = res->second;
 		
-		std::string browseName = node->getBrowseName();
-		OpcUa_NodeClass nodeClass = node->getNodeClass();
-
 		bool processNode = true;  // include child node by default if they are variables
 		
 		// If parent node is being subscribed to, children variable nodes are also subscribed to
 		// And, if the child node is an object, it is evaluated independently as per configured filter
-		if(nodeClass != OpcUa_NodeClass_Variable)
-			processNode = checkFiltering(browseName, nodeClass, false);
+		if(node->getNodeClass() != OpcUa_NodeClass_Variable)
+			processNode = checkFiltering(node->getBrowseName(), node->getNodeClass(), false);
 		
 		if(!processNode)
 		{

@@ -111,8 +111,7 @@ class OPCUA
 	std::string		securityMode(OpcUa_MessageSecurityMode mode);
 	std::string		nodeClassStr(OpcUa_NodeClass nodeClass);
 	void			resolveDuplicateBrowseNames();
-	bool 			checkFiltering(std::string browseName, OpcUa_NodeClass nodeClass, bool isDirectlySubscribed=false);
-	bool 			checkNode(std::string nodeStr, bool isDirectlySubscribed=false);
+	bool 			checkFiltering(const std::string& browseName, OpcUa_NodeClass nodeClass, bool isDirectlySubscribed=false);
 	
 	// void			getParents();
 	int32_t			m_connectionId;
@@ -197,10 +196,10 @@ class OPCUA
 	void setFilterEnabled(bool val) { m_filterEnabled = val; }
 
 	std::string getFilterRegex() { return m_filterRegex; }
-	void setFilterRegex(std::string val) { m_filterRegex = val; }
+	void setFilterRegex(std::string& val) { m_filterRegex = val; }
 
 	NodeFilterScope getFilterScope() { return m_filterScope; }
-	NodeFilterScope setFilterScope(std::string val)
+	NodeFilterScope setFilterScope(std::string& val)
 	{
 		if(val.compare("Object")==0)
 			m_filterScope = NodeFilterScope::SCOPE_OBJECT;
@@ -226,7 +225,7 @@ class OPCUA
 	}
 
 	NodeFilterAction getFilterAction() { return m_filterAction; }
-	NodeFilterAction setFilterAction(std::string val)
+	NodeFilterAction setFilterAction(std::string& val)
 	{
 		if(val.compare("Include nodes")==0)
 			m_filterAction = NodeFilterAction::INCLUDE_NODES;
