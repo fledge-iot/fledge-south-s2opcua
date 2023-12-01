@@ -824,7 +824,7 @@ bool OPCUA::checkFiltering(const std::string& browseName, OpcUa_NodeClass nodeCl
 		return true;
 	}
 
-	bool includeNode = (getFilterAction() == OPCUA::NodeFilterAction::INCLUDE_NODES);
+	bool includeNode = (getFilterAction() == OPCUA::NodeFilterAction::INCLUDE);
 	
 	bool scopeMatch = ((nodeClass == OpcUa_NodeClass_Object && 
 						(filterScope == OPCUA::NodeFilterScope::SCOPE_OBJECT || filterScope == OPCUA::NodeFilterScope::SCOPE_OBJECT_VARIABLE)) ||

@@ -186,8 +186,8 @@ class OPCUA
 	NodeFilterScope		m_filterScope;
 
 	enum NodeFilterAction {
-		INCLUDE_NODES=1,
-		EXCLUDE_NODES,
+		INCLUDE=1,
+		EXCLUDE,
 		ACTION_INVALID=0xff			
 		};
 	NodeFilterAction	m_filterAction;
@@ -227,10 +227,10 @@ class OPCUA
 	NodeFilterAction getFilterAction() { return m_filterAction; }
 	NodeFilterAction setFilterAction(std::string& val)
 	{
-		if(val.compare("Include nodes")==0)
-			m_filterAction = NodeFilterAction::INCLUDE_NODES;
-		else if(val.compare("Exclude nodes")==0)
-			m_filterAction = NodeFilterAction::EXCLUDE_NODES;
+		if(val.compare("Include")==0)
+			m_filterAction = NodeFilterAction::INCLUDE;
+		else if(val.compare("Exclude")==0)
+			m_filterAction = NodeFilterAction::EXCLUDE;
 		else
 			return NodeFilterAction::ACTION_INVALID;
 
@@ -240,8 +240,8 @@ class OPCUA
 	{
 		switch(m_filterAction)
 		{
-			case NodeFilterAction::INCLUDE_NODES: return "Include nodes";
-			case NodeFilterAction::EXCLUDE_NODES: return "Exclude nodes";
+			case NodeFilterAction::INCLUDE: return "Include";
+			case NodeFilterAction::EXCLUDE: return "Exclude";
 			default: return "Invalid action";
 		}
 	}

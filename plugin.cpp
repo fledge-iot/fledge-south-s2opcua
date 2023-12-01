@@ -209,8 +209,8 @@ static const char *default_config = QUOTE({
 	"filterAction" : {
 		"description" : "Filtering action to perform",
 		"type": "enumeration",
-		"options":["Include nodes", "Exclude nodes"],
-		"default" : "Exclude nodes",
+		"options":["Include", "Exclude"],
+		"default" : "Exclude",
 		"displayName" : "Filter action",
 		"order" : "22",
 		"group" : "Filtering"
