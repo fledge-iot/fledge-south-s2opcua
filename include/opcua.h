@@ -119,7 +119,7 @@ class OPCUA
         std::vector<std::string>
 				m_subscriptions;	// The user subscriptions
 	std::map<std::string, Node *>
-				m_nodes;		// The node information cache
+				m_nodes;		// The nodes being monitored
         std::string            	m_url;
         std::string            	m_asset;
         void                	(*m_ingest)(void *, Reading);

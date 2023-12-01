@@ -890,7 +890,6 @@ int OPCUA::subscribe()
 		if (res == m_nodes.end())
 		{
 			node = new Node(m_connectionId, *it);
-			m_nodes[*it] = node;
 		}
 		else
 			node = res->second;
@@ -899,15 +898,18 @@ int OPCUA::subscribe()
 		if(!processNode)
 		{
 			logger->warn("Skipping subscription for node '%s' because of filtering config", it->c_str());
+			if (res == m_nodes.end())
+				delete node;
+			
 			continue;
 		}
 		
 		try
 		{
-			Node node(m_connectionId, *it);
-			if (node.getNodeClass() == OpcUa_NodeClass_Variable)
+			if (node->getNodeClass() == OpcUa_NodeClass_Variable)
 			{
 				variables.push_back(*it);
+				m_nodes[*it] = node;
 			}
 			else
 			{
@@ -936,7 +938,6 @@ int OPCUA::subscribe()
 	memset((void *) node_ids, 0, variables.size() * sizeof(char *));
 
 	logger->info("Starting NodeId lookup for %d Variables", (int)variables.size());
-	int totalMonitoredItems = 0;
 	
 	int i = 0;
 	for (auto it = variables.cbegin(); it != variables.cend(); it++)
@@ -946,7 +947,6 @@ int OPCUA::subscribe()
 		if (res == m_nodes.end())
 		{
 			node = new Node(m_connectionId, *it);
-			m_nodes[*it] = node;
 		}
 		else
 			node = res->second;
@@ -961,13 +961,17 @@ int OPCUA::subscribe()
 		if(!processNode)
 		{
 			logger->warn("Skipping subscription for node '%s' because of filtering config", it->c_str());
+			if (res == m_nodes.end())
+				delete node;
+			
 			continue;
 		}
+		else
+			m_nodes[*it] = node;
 		
 		try
 		{
 			node_ids[i++] = strdup((char *)it->c_str());
-			totalMonitoredItems++;
 			logger->debug("****** Added node_ids[%d]='%s' ", i-1, node_ids[i-1]);
 
 			if (m_includePathAsMetadata)
@@ -990,6 +994,7 @@ int OPCUA::subscribe()
 		return res;
 	}
 
+	int totalMonitoredItems = m_nodes.size();
 	int actualMonitoredItems = 0;
 	int miBlockSize = 1000;
 	int callCount = 0;
