@@ -50,6 +50,7 @@ class OPCUA
         ~OPCUA();
         void        clearConfig();
         void        clearData();
+        bool        isRegexValid(const std::string &regex);
         void        parseConfig(ConfigCategory &config);
         void        reconfigure(ConfigCategory &config);
         void        clearSubscription();
@@ -108,8 +109,10 @@ class OPCUA
 	SOPC_ClientHelper_GetEndpointsResult
 				*GetEndPoints(const char *endPointUrl);
 	std::string		securityMode(OpcUa_MessageSecurityMode mode);
-	std::string		nodeClass(OpcUa_NodeClass nodeClass);
+	std::string		nodeClassStr(OpcUa_NodeClass nodeClass);
 	void			resolveDuplicateBrowseNames();
+	bool 			checkFiltering(const std::string& browseName, OpcUa_NodeClass nodeClass, bool isDirectlySubscribed=false);
+	
 	// void			getParents();
 	int32_t			m_connectionId;
 	int32_t			m_configurationId;
@@ -170,6 +173,79 @@ class OPCUA
 				m_parentNodes;
 	std::map<std::string, std::string>
 				m_fullPaths; 	// Map variable node id to full OPC UA path
+
+	bool				m_filterEnabled;
+	std::string			m_filterRegex;
+
+	enum NodeFilterScope {
+		SCOPE_OBJECT=1,
+		SCOPE_VARIABLE,
+		SCOPE_OBJECT_VARIABLE,
+		SCOPE_INVALID=0xff
+		};
+	NodeFilterScope		m_filterScope;
+
+	enum NodeFilterAction {
+		INCLUDE=1,
+		EXCLUDE,
+		ACTION_INVALID=0xff			
+		};
+	NodeFilterAction	m_filterAction;
+
+	bool getFilterEnabled() { return m_filterEnabled; }
+	void setFilterEnabled(bool val) { m_filterEnabled = val; }
+
+	std::string getFilterRegex() { return m_filterRegex; }
+	void setFilterRegex(std::string& val) { m_filterRegex = val; }
+
+	NodeFilterScope getFilterScope() { return m_filterScope; }
+	NodeFilterScope setFilterScope(std::string& val)
+	{
+		if(val.compare("Object")==0)
+			m_filterScope = NodeFilterScope::SCOPE_OBJECT;
+		else if(val.compare("Variable")==0)
+			m_filterScope = NodeFilterScope::SCOPE_VARIABLE;
+		else if(val.compare("Object and Variable")==0)
+			m_filterScope = NodeFilterScope::SCOPE_OBJECT_VARIABLE;
+		else
+			return NodeFilterScope::SCOPE_INVALID;
+
+		return m_filterScope;
+	}
+
+	std::string getFilterScopeStr()
+	{
+		switch(m_filterScope)
+		{
+			case NodeFilterScope::SCOPE_OBJECT: return "Object";
+			case NodeFilterScope::SCOPE_VARIABLE: return "Variable";
+			case NodeFilterScope::SCOPE_OBJECT_VARIABLE: return "Object and Variable";
+			default: return "Invalid scope";
+		}
+	}
+
+	NodeFilterAction getFilterAction() { return m_filterAction; }
+	NodeFilterAction setFilterAction(std::string& val)
+	{
+		if(val.compare("Include")==0)
+			m_filterAction = NodeFilterAction::INCLUDE;
+		else if(val.compare("Exclude")==0)
+			m_filterAction = NodeFilterAction::EXCLUDE;
+		else
+			return NodeFilterAction::ACTION_INVALID;
+
+		return m_filterAction;
+	}
+	std::string getFilterActionStr()
+	{
+		switch(m_filterAction)
+		{
+			case NodeFilterAction::INCLUDE: return "Include";
+			case NodeFilterAction::EXCLUDE: return "Exclude";
+			default: return "Invalid action";
+		}
+	}
+	
 };
 
 #endif

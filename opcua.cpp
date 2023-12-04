@@ -16,6 +16,7 @@
 #include <unistd.h>
 #include <chrono>
 #include <math.h>
+#include <regex>
 
 using namespace std;
 
@@ -458,6 +459,23 @@ void OPCUA::clearData()
 }
 
 /**
+ * Check regex validity
+ *
+ * @param	regex	Regular expression
+ * @return	bool	true if regex is valid, false otherwise
+ */
+bool OPCUA::isRegexValid(const std::string &regexp)
+{
+    try {
+        regex re(regexp);
+    }
+    catch (const std::regex_error& ) {
+        return false;
+    }
+    return true;
+}
+
+/**
  * Parse plugin configuration
  *
  * @param config	configuration information
@@ -600,6 +618,56 @@ void OPCUA::parseConfig(ConfigCategory &config)
 	{
 		setTraceFile(config.getValue("traceFile"));
 	}
+
+	setFilterEnabled(false);
+
+	if (config.itemExists("filterRegex"))
+	{
+		string val = config.getValue("filterRegex");
+		if (!val.empty() & isRegexValid(val))
+		{
+			setFilterRegex(val);
+			setFilterEnabled(true);
+			Logger::getLogger()->info("Filter regex set to '%s' ", val.c_str());
+		}
+		else
+		{
+			Logger::getLogger()->info("Invalid filter regex '%s' in config, disabling filtering", val.c_str());
+			setFilterEnabled(false);
+		}
+	}
+
+	if (config.itemExists("filterScope"))
+	{
+		string val = config.getValue("filterScope");
+		NodeFilterScope rv = OPCUA::NodeFilterScope::SCOPE_INVALID;
+		if (!val.empty())
+			rv = setFilterScope(val);
+		
+		if (rv == OPCUA::NodeFilterScope::SCOPE_INVALID)
+		{
+			Logger::getLogger()->warn("Invalid filter scope '%s' in config, disabling filtering", val.c_str());
+			setFilterEnabled(false);
+		}
+		else
+			Logger::getLogger()->info("Filter scope set to '%s' ", val.c_str());
+	}
+
+	if (config.itemExists("filterAction"))
+	{
+		string val = config.getValue("filterAction");
+		NodeFilterAction rv = OPCUA::NodeFilterAction::ACTION_INVALID;
+		if (!val.empty())
+			rv = setFilterAction(val);
+		
+		if (rv == OPCUA::NodeFilterAction::ACTION_INVALID)
+		{
+			Logger::getLogger()->warn("Invalid filter action '%s' in config, disabling filtering", val.c_str());
+			setFilterEnabled(false);
+		}
+		else
+			Logger::getLogger()->info("Filter action set to '%s' ", val.c_str());
+	}
 }
 
 /**
@@ -720,6 +788,78 @@ void OPCUA::clearSubscription()
 }
 
 /**
+ * Returns whether Node is to be subscribed to, as per filtering config
+ *
+ * @param 	browseName	Browse Name of the OPCUA node
+ * @param 	nodeClass	Node class of the OPCUA node
+ * @param 	isDirectlySubscribed	Is the node present in the subscription
+ *                                    map in plugin config
+ * @return	subscribeNode	If true, node should be subscribed to
+ */
+bool OPCUA::checkFiltering(const std::string& browseName, OpcUa_NodeClass nodeClass, bool isDirectlySubscribed)
+{
+	// if filtering is disabled, always subscribe to given node
+	if(!getFilterEnabled())
+	{
+		Logger::getLogger()->debug("Node '%s': FILTERING IS DISABLED", browseName.c_str());
+		return true;
+	}
+
+	OPCUA::NodeFilterScope filterScope = getFilterScope();
+
+	// No check is required in case of a directly subscribed variable when filterScope is SCOPE_OBJECT
+	if( (nodeClass == OpcUa_NodeClass_Variable) && isDirectlySubscribed && 
+				 (filterScope == OPCUA::NodeFilterScope::SCOPE_OBJECT) )
+	{
+		Logger::getLogger()->debug("Node '%s': Bypassing filtering check in case of directly subscribed "
+									"variables when filterScope is SCOPE_OBJECT", browseName.c_str());
+		return true;
+	}
+
+	// No check is required in case of objects when filterScope is SCOPE_VARIABLE; just browse all objects
+	if( (nodeClass == OpcUa_NodeClass_Object) && (filterScope == OPCUA::NodeFilterScope::SCOPE_VARIABLE) )
+	{
+		Logger::getLogger()->debug("Node '%s': Bypassing filtering check in case of objects when filterScope"
+									" is SCOPE_VARIABLE", browseName.c_str());
+		return true;
+	}
+
+	bool includeNode = (getFilterAction() == OPCUA::NodeFilterAction::INCLUDE);
+	
+	bool scopeMatch = ((nodeClass == OpcUa_NodeClass_Object && 
+						(filterScope == OPCUA::NodeFilterScope::SCOPE_OBJECT || filterScope == OPCUA::NodeFilterScope::SCOPE_OBJECT_VARIABLE)) ||
+						(nodeClass == OpcUa_NodeClass_Variable));  // no need to check scope in case of variables; won't reject a variable irrespective of filter scope
+	
+	if (scopeMatch)
+	{
+		string filterRegex = getFilterRegex();
+		regex re(filterRegex);
+		bool match = std::regex_match(browseName, re);
+		Logger::getLogger()->debug("filterAction=%s, filterScope=%s, nodeClass=%s, scopeMatch=%s, browseName=%s,"
+									" filterRegex=%s, match=%s, subscribe=%s",
+										getFilterActionStr().c_str(), getFilterScopeStr().c_str(), nodeClassStr(nodeClass).c_str(), 
+										scopeMatch?"TRUE":"FALSE", browseName.c_str(), filterRegex.c_str(),
+										match?"TRUE":"FALSE", (includeNode == match)?"TRUE":"FALSE");
+		return (includeNode == match);
+		
+		// include - regex match - subscribe
+		// include - regex not matched - no subscribe
+
+		// exclude - regex match - no subscribe
+		// exclude - regex not matched - subscribe
+	}
+	else
+	{
+		Logger::getLogger()->debug("filterAction=%s, filterScope=%s, nodeClass=%s, scopeMatch=%s, browseName=%s, subscribe=%s",
+										getFilterActionStr().c_str(), getFilterScopeStr().c_str(), nodeClassStr(nodeClass).c_str(), 
+										scopeMatch?"TRUE":"FALSE", browseName.c_str(), (!includeNode)?"TRUE":"FALSE");
+		return !includeNode;
+		// scope mismatch - include - can't include
+		// scope mismatch - exclude - ok to include
+	}
+}
+
+/**
  * Add a subscription parent node to the list
  */
 void OPCUA::addSubscription(const string &parent)
@@ -741,16 +881,35 @@ int OPCUA::subscribe()
 		logger->error("Attempt to subscribe aborted, no connection to the OPC UA server");
 		return 1;
 	}
-
+	
 	vector<string> variables;
 	for (auto it = m_subscriptions.cbegin(); it != m_subscriptions.cend(); it++)
 	{
+		auto res = m_nodes.find(*it);
+		Node *node = NULL;
+		if (res == m_nodes.end())
+		{
+			node = new Node(m_connectionId, *it);
+		}
+		else
+			node = res->second;
+		
+		bool processNode = checkFiltering(node->getBrowseName(), node->getNodeClass(), true);
+		if(!processNode)
+		{
+			logger->warn("Skipping subscription for node '%s' because of filtering config", it->c_str());
+			if (res == m_nodes.end())
+				delete node;
+			
+			continue;
+		}
+		
 		try
 		{
-			Node node(m_connectionId, *it);
-			if (node.getNodeClass() == OpcUa_NodeClass_Variable)
+			if (node->getNodeClass() == OpcUa_NodeClass_Variable)
 			{
 				variables.push_back(*it);
+				m_nodes[*it] = node;
 			}
 			else
 			{
@@ -762,13 +921,15 @@ int OPCUA::subscribe()
 			logger->error("Unable to read Node %s", it->c_str());
 		}
 	}
+	
 	if (variables.size() == 0)
 	{
 		logger->error("No variables found to be monitored");
 		return 0;
 	}
 
-	char **node_ids = (char **)calloc(variables.size(), sizeof(char *));
+	char **node_ids = (char **)calloc(variables.size(), sizeof(char *)); 
+	
 	if (node_ids == NULL)
 	{
 		logger->error("Failed to allocate memory for %d subscriptions", variables.size());
@@ -777,34 +938,41 @@ int OPCUA::subscribe()
 	memset((void *) node_ids, 0, variables.size() * sizeof(char *));
 
 	logger->info("Starting NodeId lookup for %d Variables", (int)variables.size());
+	
 	int i = 0;
 	for (auto it = variables.cbegin(); it != variables.cend(); it++)
 	{
+		auto res = m_nodes.find(*it);
+		Node *node = NULL;
+		if (res == m_nodes.end())
+		{
+			node = new Node(m_connectionId, *it);
+		}
+		else
+			node = res->second;
+		
+		bool processNode = true;  // include child node by default if they are variables
+		
+		// If parent node is being subscribed to, children variable nodes are also subscribed to
+		// And, if the child node is an object, it is evaluated independently as per configured filter
+		if(node->getNodeClass() != OpcUa_NodeClass_Variable)
+			processNode = checkFiltering(node->getBrowseName(), node->getNodeClass(), false);
+		
+		if(!processNode)
+		{
+			logger->warn("Skipping subscription for node '%s' because of filtering config", it->c_str());
+			if (res == m_nodes.end())
+				delete node;
+			
+			continue;
+		}
+		else
+			m_nodes[*it] = node;
+		
 		try
 		{
-			// Hack: Skip any NodeId string with leading underscores in any segment of the path.
-			// ToDo: implement user configuration to skip parsing if a certain prefix is present.
-			if (it->find("._") != std::string::npos)
-			{
-				logger->debug("Skipping Node %s", it->c_str());
-				continue;
-			}
-			
-			Node *node = NULL;
-			auto findItr = m_nodes.find(*it);
-			if (findItr == m_nodes.end())
-			{
-				node = new Node(m_connectionId, it->c_str());
-				m_nodes.insert(pair<string, Node *>(*it, node));
-				logger->debug("Subscribe to Node %s, BrowseName(a) %s", node->getNodeId().c_str(), node->getBrowseName().c_str());
-			}
-			else
-			{
-				node = findItr->second;
-				logger->debug("Subscribe to Node %s, BrowseName(b) %s", node->getNodeId().c_str(), node->getBrowseName().c_str());
-			}
-
 			node_ids[i++] = strdup((char *)it->c_str());
+			logger->debug("****** Added node_ids[%d]='%s' ", i-1, node_ids[i-1]);
 
 			if (m_includePathAsMetadata)
 			{
@@ -842,7 +1010,7 @@ int OPCUA::subscribe()
 			done = true;
 		}
 
-		logger->debug("MI_AddMonitoredItems_Call: %d %d %d", i, numNodeIds, totalMonitoredItems);
+		logger->debug("MI_AddMonitoredItems_Call: i=%d, numNodeIds=%d, totalMonitoredItems=%d, m_nodes.size()=%d", i, numNodeIds, totalMonitoredItems, m_nodes.size());
 		res = SOPC_ClientHelper_AddMonitoredItems(m_connectionId, &node_ids[i], numNodeIds, NULL);
 		logger->debug("MI_AddMonitoredItems_Done: Res: %d", res);
 		callCount++;
@@ -949,7 +1117,7 @@ void OPCUA::getNodeFullPath(const std::string &nodeId, std::string &path)
 								   browseResult.references[i].browseName,
 								   browseResult.references[i].displayName,
 								   browseResult.references[i].referenceTypeId,
-								   nodeClass(browseResult.references[i].nodeClass).c_str());
+								   nodeClassStr(browseResult.references[i].nodeClass).c_str());
 
 		// Build an OPC UA path only if the reference type is appropriate (e.g. relationships but no notifiers)
 		// Stop building the full path when the parent is the top-level Objects folder
@@ -1611,19 +1779,61 @@ void OPCUA::browse(const string &nodeid, vector<string> &variables)
 	{
 		if (browseResult.references[i].nodeClass == OpcUa_NodeClass_Object)
 		{
-			browse(browseResult.references[i].nodeId, variables);
-		}
-		if (browseResult.references[i].nodeClass == OpcUa_NodeClass_Variable)
-		{
-			if (strstr(browseResult.references[i].nodeId, "._") != NULL)
+			bool processNode = checkFiltering(browseResult.references[i].browseName, browseResult.references[i].nodeClass);
+			if(!processNode)
 			{
-				Logger::getLogger()->debug("Skipping Browse Node %s", browseResult.references[i].nodeId);
+				Logger::getLogger()->info("Skipping Browse Node '%s' with browseName '%s', because of filtering config",
+								browseResult.references[i].nodeId, browseResult.references[i].browseName);
 				continue;
 			}
+			Logger::getLogger()->info("Browse Node '%s' with browseName '%s', survived filtering, browsing it...", 
+								browseResult.references[i].nodeId, browseResult.references[i].browseName);
+			
+			browse(browseResult.references[i].nodeId, variables);
+		}
+		
+		if (browseResult.references[i].nodeClass == OpcUa_NodeClass_Variable)
+		{
+			// Filtering: Code flow is here since parent node is included, now:
+			// If filterScope is SCOPE_OBJECT, then children are included without check, if they have OpcUa_NodeClass_Variable nodeClass. 
+			// And if filterScope is SCOPE_VARIABLE or SCOPE_OBJECT_VARIABLE, then children are checked against filtering config for inclusion
+			if(getFilterEnabled())
+			{
+				OPCUA::NodeFilterScope filterScope = getFilterScope();
 
-			variables.push_back(browseResult.references[i].nodeId);
-			Node *node = new Node(browseResult.references[i].nodeId, browseResult.references[i].browseName);
-			m_nodes.insert(pair<string, Node *>(browseResult.references[i].nodeId, node));
+				bool processNode;
+				if (filterScope == OPCUA::NodeFilterScope::SCOPE_OBJECT)
+				{
+					processNode = true;
+				}
+				else if (filterScope == OPCUA::NodeFilterScope::SCOPE_VARIABLE || filterScope == OPCUA::NodeFilterScope::SCOPE_OBJECT_VARIABLE)
+				{
+					processNode = checkFiltering(browseResult.references[i].browseName, browseResult.references[i].nodeClass);
+				}
+				else
+					Logger::getLogger()->warn("Code flow shouldn't have reached this statement: NodeId=%s, filterScope=%s", 
+									browseResult.references[i].nodeId, getFilterScopeStr().c_str());
+				
+				if(!processNode)
+				{
+					Logger::getLogger()->info("Skipping Browse Node '%s' with browseName '%s', because of filtering config",
+									browseResult.references[i].nodeId, browseResult.references[i].browseName);
+					continue;
+				}
+				else
+					Logger::getLogger()->info("Browse Node '%s' with browseName '%s', survived filtering", 
+									browseResult.references[i].nodeId, browseResult.references[i].browseName);
+			}
+			
+			if (m_nodes.find(browseResult.references[i].nodeId) == m_nodes.end())
+			{
+				variables.push_back(browseResult.references[i].nodeId);
+				Node *node = new Node(browseResult.references[i].nodeId, browseResult.references[i].browseName);
+				m_nodes[browseResult.references[i].nodeId] = node;
+				Logger::getLogger()->debug("New entry: Subscribe to Node %s, BrowseName(a) %s", browseResult.references[i].nodeId, browseResult.references[i].browseName);
+			}
+			else
+				Logger::getLogger()->debug("Existing entry: Subscribe to Node %s, BrowseName(b) %s", browseResult.references[i].nodeId, browseResult.references[i].browseName);
 
 			// m_parents.insert(pair<string, string>(browseResult.references[i].nodeId, nodeid));
 			m_parentNodes.insert(pair<string, Node *>(browseResult.references[i].nodeId, parentNode));
@@ -1632,7 +1842,7 @@ void OPCUA::browse(const string &nodeid, vector<string> &variables)
 		Logger::getLogger()->debug("Item #%d: NodeId %s, displayName %s, nodeClass %s",
 								   i, browseResult.references[i].nodeId,
 								   browseResult.references[i].displayName,
-								   nodeClass(browseResult.references[i].nodeClass).c_str());
+								   nodeClassStr(browseResult.references[i].nodeClass).c_str());
 
 		free(browseResult.references[i].nodeId);
 		free(browseResult.references[i].displayName);
@@ -1640,6 +1850,8 @@ void OPCUA::browse(const string &nodeid, vector<string> &variables)
 		free(browseResult.references[i].referenceTypeId);
 	}
 	free(browseResult.references);
+
+	Logger::getLogger()->info("Browsing of '%s' completed", browseRequest.nodeId);
 }
 
 /**
@@ -1760,8 +1972,11 @@ string OPCUA::securityMode(OpcUa_MessageSecurityMode mode)
 
 /**
  * Return a string representation of a NodeClass
+ *
+ * @param scheme	 Node class enumeration value
+ * @return value	 Node class as a string
  */
-string OPCUA::nodeClass(OpcUa_NodeClass nodeClass)
+string OPCUA::nodeClassStr(OpcUa_NodeClass nodeClass)
 {
 	switch (nodeClass)
 	{
