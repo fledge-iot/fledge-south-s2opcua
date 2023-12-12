@@ -1,5 +1,6 @@
 .. Images
 .. |opcua_1| image:: images/opcua_1.jpg
+.. |opcua_filtering| image:: images/opcua_filtering.png
 .. |opcua_advanced| image:: images/opcua_advanced.jpg
 .. |opcua_security| image:: images/opcua_security.jpg
 .. |opcua_2| image:: images/opcua_2.jpg
