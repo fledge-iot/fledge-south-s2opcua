@@ -188,7 +188,33 @@ static const char *default_config = QUOTE({
             "displayName" : "Debug Trace File",
 	    "group" : "OPC UA Advanced",
             "order" : "19"
-            }
+            },
+	"filterRegex" : {
+		"description" : "Regular expression for filtering nodes that are to be processed",
+		"type" : "string",
+		"default" : "",
+		"displayName" : "Regular expression",
+		"order" : "20",
+		"group" : "Filtering"
+		},
+	"filterScope" : {
+		"description" : "Specify the scope of the filter",
+		"type": "enumeration",
+		"options":["Object", "Variable", "Object and Variable"],
+		"default" : "Variable",
+		"displayName" : "Scope",
+		"order" : "21",
+		"group" : "Filtering"
+		},
+	"filterAction" : {
+		"description" : "Filtering action to perform",
+		"type": "enumeration",
+		"options":["Include", "Exclude"],
+		"default" : "Exclude",
+		"displayName" : "Filter action",
+		"order" : "22",
+		"group" : "Filtering"
+		}
     });
 
 /**
