@@ -996,7 +996,8 @@ int OPCUA::subscribe()
 
 	int totalMonitoredItems = m_nodes.size();
 	int actualMonitoredItems = 0;
-	int miBlockSize = 1000;
+	//Keep miBlockSize low so that SOPC_ClientHelper_AddMonitoredItems call doesn't timeout
+	int miBlockSize = 100;
 	int callCount = 0;
 	res = 0;
 	i = 0;
@@ -1697,7 +1698,16 @@ OPCUA::Node::Node(uint32_t conn, const string &nodeId) : m_nodeID(nodeId)
 	readValue[2].indexRange = NULL;
 
 	int res;
-	if ((res = SOPC_ClientHelper_Read(conn, readValue, 3, values)) == 0)
+	int RETRY_COUNT=5;
+	while(RETRY_COUNT > 0)
+	{
+		res = SOPC_ClientHelper_Read(conn, readValue, 3, values);
+		if (res == 0)
+			break;
+		RETRY_COUNT++;
+		Logger::getLogger()->debug("Failed to read Node \"%s\", %d: Retry count, %d", nodeId.c_str(), res, RETRY_COUNT);
+	}
+	if ( res == 0)
 	{
 		SOPC_Variant variant = values[0].Value;
 		if (variant.Value.Qname)
@@ -1770,9 +1780,16 @@ void OPCUA::browse(const string &nodeid, vector<string> &variables)
 	}
 	else
 	{
-		parentNode = new Node(m_connectionId, nodeid);
-		m_nodeObjects.insert(parentNode);
-		Logger::getLogger()->debug("Parent insert %s; %d items", parentNode->getNodeId().c_str(), m_nodeObjects.size());
+		try
+		{
+			parentNode = new Node(m_connectionId, nodeid);
+			m_nodeObjects.insert(parentNode);
+			Logger::getLogger()->debug("Parent insert %s; %d items", parentNode->getNodeId().c_str(), m_nodeObjects.size());
+		}
+		catch (std::exception &e)
+		{
+			Logger::getLogger()->warn("Failed to read node  %s",nodeid.c_str());
+		}
 	}
 
 	for (int32_t i = 0; i < browseResult.nbOfReferences; i++)
