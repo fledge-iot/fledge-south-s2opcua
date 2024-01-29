@@ -401,6 +401,7 @@ void OPCUA::clearConfig()
 	m_includePathAsMetadata = false;
 	m_assetNaming = ASSET_NAME_SINGLE;
 	m_reportingInterval = 100;
+	m_miBlockSize = 100;
 	m_secMode = OpcUa_MessageSecurityMode_Invalid;
 	if (m_traceFile)
 	{
@@ -512,6 +513,15 @@ void OPCUA::parseConfig(ConfigCategory &config)
 	else
 	{
 		setReportingInterval(100);
+	}
+
+	if (config.itemExists("miBlockSize"))
+	{
+		m_miBlockSize = strtol(config.getValue("miBlockSize").c_str(), NULL, 10);
+	}
+	else
+	{
+		m_miBlockSize = 100;
 	}
 
 	if (config.itemExists("subscription"))
@@ -996,8 +1006,7 @@ int OPCUA::subscribe()
 
 	int totalMonitoredItems = m_nodes.size();
 	int actualMonitoredItems = 0;
-	//Keep miBlockSize low so that SOPC_ClientHelper_AddMonitoredItems call doesn't timeout
-	int miBlockSize = 100;
+	int miBlockSize = m_miBlockSize;
 	int callCount = 0;
 	res = 0;
 	i = 0;
