@@ -112,7 +112,7 @@ The OPC UA Advanced tab allows advanced configuration parameters to be set.
     The path does not include the *Objects* folder or the subscribed Node.
   - **Full OPC UA Path meta data name**: The data point name to use when adding the full OPC UA path to every reading. Default is *OPCUAPath*.
   - **Debug Trace File**: Enable the S2OPCUA OPCUA Toolkit trace file for debugging. If enabled, log files will appear in the directory */usr/local/fledge/data/logs*.
-  - **MonitoredItem block size**: The number of MonitoredItem to be added on to the OPCUA server in single call.
+  - **MonitoredItem block size**: The number of MonitoredItems to be registered with the OPC/UA server in single call to the S2OPCUA OPCUA Toolkit. MonitoredItem is the OPC/UA term for a single data stream registered for data updates from an OPC/UA server. MonitoredItem block size can be minimum 1 and maximum the 32-bit integer value. Default value will work fine for most of the cases. Use lower value if following error **Failed to add <N> Monitored Items** appears in the system logs.
 
 The OPC UA Security tab contains a set of configuration items that is used for setting the security between the plugin and the OPC UA Server.
 

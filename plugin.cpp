@@ -190,10 +190,10 @@ static const char *default_config = QUOTE({
             "order" : "19"
             },
     "miBlockSize" : {
-            "description" : "The number of MonitoredItem to be added on to the OPCUA server in single call" ,
+            "description" : "The number of MonitoredItems to be registered with the OPC/UA server in single call to the S2OPCUA OPCUA Toolkit" ,
             "type" : "integer",
             "default" : "100",
-	    "minimum" : "0",
+	    "minimum" : "1",
             "displayName" : "MonitoredItem block size",
             "group" : "OPC UA Advanced",
             "order" : "20"

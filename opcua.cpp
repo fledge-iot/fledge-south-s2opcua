@@ -1707,14 +1707,14 @@ OPCUA::Node::Node(uint32_t conn, const string &nodeId) : m_nodeID(nodeId)
 	readValue[2].indexRange = NULL;
 
 	int res;
-	int RETRY_COUNT=5;
-	while(RETRY_COUNT > 0)
+	int retry_count=5;
+	while(retry_count > 0)
 	{
 		res = SOPC_ClientHelper_Read(conn, readValue, 3, values);
 		if (res == 0)
 			break;
-		RETRY_COUNT++;
-		Logger::getLogger()->debug("Failed to read Node \"%s\", %d: Retry count, %d", nodeId.c_str(), res, RETRY_COUNT);
+		retry_count--;
+		Logger::getLogger()->debug("Failed to read Node \"%s\", %d: Retry count, %d", nodeId.c_str(), res, retry_count);
 	}
 	if ( res == 0)
 	{
