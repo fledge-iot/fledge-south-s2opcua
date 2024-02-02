@@ -189,12 +189,21 @@ static const char *default_config = QUOTE({
 	    "group" : "OPC UA Advanced",
             "order" : "19"
             },
+    "miBlockSize" : {
+            "description" : "The number of MonitoredItems to be registered with the OPC/UA server in single call to the S2OPCUA OPCUA Toolkit" ,
+            "type" : "integer",
+            "default" : "100",
+	    "minimum" : "1",
+            "displayName" : "MonitoredItem block size",
+            "group" : "OPC UA Advanced",
+            "order" : "20"
+            },
 	"filterRegex" : {
 		"description" : "Regular expression for filtering nodes that are to be processed",
 		"type" : "string",
 		"default" : "",
 		"displayName" : "Regular expression",
-		"order" : "20",
+		"order" : "21",
 		"group" : "Filtering"
 		},
 	"filterScope" : {
@@ -203,7 +212,7 @@ static const char *default_config = QUOTE({
 		"options":["Object", "Variable", "Object and Variable"],
 		"default" : "Variable",
 		"displayName" : "Scope",
-		"order" : "21",
+		"order" : "22",
 		"group" : "Filtering"
 		},
 	"filterAction" : {
@@ -212,7 +221,7 @@ static const char *default_config = QUOTE({
 		"options":["Include", "Exclude"],
 		"default" : "Exclude",
 		"displayName" : "Filter action",
-		"order" : "22",
+		"order" : "23",
 		"group" : "Filtering"
 		}
     });
