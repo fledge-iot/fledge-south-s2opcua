@@ -1422,12 +1422,13 @@ void OPCUA::start()
 					if (matchedPolicyId)
 					{
 						security.policyId = userIds[j].policyId; // Policy Id must match the OPC UA server's name for it
-						logger->debug("Endpoint %d matches on policyId %s (%d)", i, security.policyId, (int)userIds[j].tokenType);
+						logger->debug("Endpoint %d matches on PolicyId '%s' (%s)(%d)", i, security.policyId, userIds[j].securityPolicyUri, (int)userIds[j].tokenType);
 						matched = true;
 					}
 					else
 					{
-						logger->debug("%d: '%s' != '%s' (%d)", i, security.policyId, userIds[j].policyId, (int)userIds[j].tokenType);
+						logger->debug("%d: Security Policy mismatch: Endpoint: '%s' UserIdentityToken: '%s' (%s)(%d)",
+							i, security.security_policy, userIds[j].securityPolicyUri, userIds[j].policyId, (int)userIds[j].tokenType);
 						continue;
 					}
 				}
