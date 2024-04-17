@@ -146,6 +146,7 @@ class OPCUA
         int64_t             	m_publishPeriod;
         uint16_t             	m_tokenTarget;
         int                 	m_nodeIdsSize;
+        int                 	m_miBlockSize;
 		
         bool                 	m_disableCertVerif;
         char                 	*m_traceFile;

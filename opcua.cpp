@@ -401,6 +401,7 @@ void OPCUA::clearConfig()
 	m_includePathAsMetadata = false;
 	m_assetNaming = ASSET_NAME_SINGLE;
 	m_reportingInterval = 100;
+	m_miBlockSize = 100;
 	m_secMode = OpcUa_MessageSecurityMode_Invalid;
 	if (m_traceFile)
 	{
@@ -512,6 +513,15 @@ void OPCUA::parseConfig(ConfigCategory &config)
 	else
 	{
 		setReportingInterval(100);
+	}
+
+	if (config.itemExists("miBlockSize"))
+	{
+		m_miBlockSize = strtol(config.getValue("miBlockSize").c_str(), NULL, 10);
+	}
+	else
+	{
+		m_miBlockSize = 100;
 	}
 
 	if (config.itemExists("subscription"))
@@ -996,7 +1006,7 @@ int OPCUA::subscribe()
 
 	int totalMonitoredItems = m_nodes.size();
 	int actualMonitoredItems = 0;
-	int miBlockSize = 1000;
+	int miBlockSize = m_miBlockSize;
 	int callCount = 0;
 	res = 0;
 	i = 0;
@@ -1412,12 +1422,13 @@ void OPCUA::start()
 					if (matchedPolicyId)
 					{
 						security.policyId = userIds[j].policyId; // Policy Id must match the OPC UA server's name for it
-						logger->debug("Endpoint %d matches on policyId %s (%d)", i, security.policyId, (int)userIds[j].tokenType);
+						logger->debug("Endpoint %d matches on PolicyId '%s' (%s)(%d)", i, security.policyId, userIds[j].securityPolicyUri, (int)userIds[j].tokenType);
 						matched = true;
 					}
 					else
 					{
-						logger->debug("%d: '%s' != '%s' (%d)", i, security.policyId, userIds[j].policyId, (int)userIds[j].tokenType);
+						logger->debug("%d: Security Policy mismatch: Endpoint: '%s' UserIdentityToken: '%s' (%s)(%d)",
+							i, security.security_policy, userIds[j].securityPolicyUri, userIds[j].policyId, (int)userIds[j].tokenType);
 						continue;
 					}
 				}
@@ -1697,7 +1708,16 @@ OPCUA::Node::Node(uint32_t conn, const string &nodeId) : m_nodeID(nodeId)
 	readValue[2].indexRange = NULL;
 
 	int res;
-	if ((res = SOPC_ClientHelper_Read(conn, readValue, 3, values)) == 0)
+	int retry_count=5;
+	while(retry_count > 0)
+	{
+		res = SOPC_ClientHelper_Read(conn, readValue, 3, values);
+		if (res == 0)
+			break;
+		retry_count--;
+		Logger::getLogger()->debug("Failed to read Node \"%s\", %d: Retry count, %d", nodeId.c_str(), res, retry_count);
+	}
+	if ( res == 0)
 	{
 		SOPC_Variant variant = values[0].Value;
 		if (variant.Value.Qname)
@@ -1770,9 +1790,16 @@ void OPCUA::browse(const string &nodeid, vector<string> &variables)
 	}
 	else
 	{
-		parentNode = new Node(m_connectionId, nodeid);
-		m_nodeObjects.insert(parentNode);
-		Logger::getLogger()->debug("Parent insert %s; %d items", parentNode->getNodeId().c_str(), m_nodeObjects.size());
+		try
+		{
+			parentNode = new Node(m_connectionId, nodeid);
+			m_nodeObjects.insert(parentNode);
+			Logger::getLogger()->debug("Parent insert %s; %d items", parentNode->getNodeId().c_str(), m_nodeObjects.size());
+		}
+		catch (std::exception &e)
+		{
+			Logger::getLogger()->warn("Failed to read node  %s",nodeid.c_str());
+		}
 	}
 
 	for (int32_t i = 0; i < browseResult.nbOfReferences; i++)

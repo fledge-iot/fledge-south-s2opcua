@@ -112,6 +112,7 @@ The OPC UA Advanced tab allows advanced configuration parameters to be set.
     The path does not include the *Objects* folder or the subscribed Node.
   - **Full OPC UA Path meta data name**: The data point name to use when adding the full OPC UA path to every reading. Default is *OPCUAPath*.
   - **Debug Trace File**: Enable the S2OPCUA OPCUA Toolkit trace file for debugging. If enabled, log files will appear in the directory */usr/local/fledge/data/logs*.
+  - **MonitoredItem block size**: "The number of items passed in single call to the S2OPCUA OPCUA Toolkit when requesting to monitor data change events in the OPC/UA server. The default value will work in most of the cases. If the error **Failed to add Monitored Items** is written to the logs then try reducing the number of items sent in each call until this error stops occurring. Reducing the number too far will impact the performance, increasing the time it takes to setup the connection with the server and get the first data back from the server. Using very large values for this call will put extra stress on the OPC/UA server and also increase the memory footprint of the plugin. The minimum value of this is 1, the default is 100.
 
 The OPC UA Security tab contains a set of configuration items that is used for setting the security between the plugin and the OPC UA Server.
 
@@ -134,6 +135,8 @@ The OPC UA Security tab contains a set of configuration items that is used for s
   - **User Authentication Policy**: Specify the user authentication policy that will be used when authenticating the connection to the OPC/UA server.
 
   - **Username**: Specify the username to use for authentication. This is only used if the *User authentication policy* is set to *username*.
+    If you choose this policy, you must select a Security Policy other than None.
+    See the section Username Authentication below.
 
   - **Password**: Specify the password to use for authentication. This is only used if the *User authentication policy* is set to *username*.
 
@@ -187,6 +190,31 @@ We subscribe to
  - Random.Double and Random.Boolean are variables under ObjectsNode/Demo both in namespace 2
 
 Object names, variable names and namespace indices can be easily retrieved browsing the given OPC/UA server using OPC UA clients, such as |UaExpert|.
+
+Username Authentication
+-----------------------
+
+If you set the User Authentication Policy to username, you must select a Security Policy other than *None* to communicate with the OPC/UA Server.
+Allowing *username* with *None* would mean that usernames and passwords would be passed from the plugin to the server as clear text which is a serious security risk.
+This is explained in the `OPC UA Specification Part 4, Section 7.36.4 <https://reference.opcfoundation.org/Core/Part4/v104/docs/7.36.4>`_.
+
+Each OPC/UA server endpoint includes a list of UserIdentityTokens it will accept such as anonymous, username or certificate.
+Each UserIdentityToken has its own Security Policy.
+The S2OPC South plugin requires the configured Security Policy for the connection to match the Security Policy for the UserIdentityToken.
+
+If your configuration fails to find a matching endpoint, it could be because the required UserIdentityToken Security Policy does not match your configuration.
+To diagnose this, set the Minimum Log Level to *Debug* in the Advanced Configuration page of the Fledge GUI.
+After starting the plugin, you will see Debug messages documenting the endpoint search.
+If Security Policy mismatch is the problem, you will see a message like:
+
+.. code-block:: bash
+
+   DEBUG: 0: Security Policy mismatch: Endpoint: 'http://opcfoundation.org/UA/SecurityPolicy#Basic256Sha256' UserIdentityToken: 'http://opcfoundation.org/UA/SecurityPolicy#Basic256' (username_basic256)(1)
+
+This message says that the configured Security Policy for the connection is *Basic256Sha256* but the required policy for the UserIdentityToken is *Basic256*.
+To fix this, set the Security Policy for the connection to *Basic256* in the Fledge GUI.
+The string *username_basic256* in this example is the OPC/UA server's name for the UserIdentityToken.
+This name does not affect configuration.
 
 Certificate Management
 ----------------------
