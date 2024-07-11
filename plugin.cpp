@@ -262,6 +262,7 @@ PLUGIN_HANDLE plugin_init(ConfigCategory *config)
 {
     OPCUA *opcua = new OPCUA();
     opcua->parseConfig(*config);
+    opcua->setInstanceName(config->getName());
     return (PLUGIN_HANDLE)opcua;
 }
 
@@ -314,8 +315,8 @@ Reading plugin_poll(PLUGIN_HANDLE *handle)
  */
 void plugin_reconfigure(PLUGIN_HANDLE *handle, string &newConfig)
 {
-    ConfigCategory config("new", newConfig);
     OPCUA *opcua = (OPCUA *)*handle;
+    ConfigCategory config(opcua->getInstanceName(), newConfig);
     opcua->reconfigure(config);
 }
 
