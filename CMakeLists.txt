@@ -67,7 +67,6 @@ include_directories(${FLEDGE_INCLUDE_DIRS})
 
 include_directories(/usr/local/include/s2opc/common)
 include_directories(/usr/local/include/s2opc/clientserver)
-include_directories(/usr/local/include/s2opc/clientserver/frontend)
 
 # Add Fledge lib path
 link_directories(${FLEDGE_LIB_DIRS})

@@ -69,13 +69,11 @@ tar xf check-0.15.2.tar.gz
 git clone https://gitlab.com/systerel/S2OPC.git --branch S2OPC_Toolkit_1.5.0 --depth 1
 (
 	cd S2OPC
-	cp ../S2OPC.patch .
-	git apply S2OPC.patch
-	CMAKE_INSTALL_PREFIX=/usr/local
-	BUILD_SHARED_LIBS=1 ./build.sh
+	BUILD_SHARED_LIBS=1 CMAKE_INSTALL_PREFIX=/usr/local ./build.sh
 	echo
 	echo "BUILD done, INSTALLING..."
 	echo
 	cd build
 	sudo make install
+	sudo cp ../src/ClientServer/frontend/client_wrapper/libs2opc_client_config_custom.h /usr/local/include/s2opc/clientserver
 )
