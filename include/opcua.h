@@ -23,10 +23,14 @@
 #include <set>
 extern "C" {
 #include "sopc_logger.h"
-#include "libs2opc_common_config.h"
-#include "libs2opc_client_cmds.h"
-#include "sopc_logger.h"
+#include "libs2opc_client_config_custom.h"
+#include "libs2opc_new_client.h"
+#include "libs2opc_request_builder.h"
 #include "sopc_time.h"
+#include "sopc_macros.h"
+#include "sopc_mem_alloc.h"
+#include "sopc_encodeable.h"
+#include "opcua_identifiers.h"
 };
 
 class OpcUaClient;
@@ -39,6 +43,8 @@ class OpcUaClient;
 #define TIMEOUT_MS 10000
 /* Secure Channel lifetime */
 #define SC_LIFETIME_MS 3600000
+/* Number of Variables to return for each browse call */
+#define BROWSE_BLOCKSIZE 512
 
 /**
  * Interface to the S2 OPCUA library
@@ -56,8 +62,8 @@ class OPCUA
         void        clearSubscription();
         void        addSubscription(const std::string& parent);
         int         addSubscriptions(std::vector<std::string> vec);
-        void        getEndpoints();
         void        setAssetName(const std::string& name);
+		std::string	getInstanceName() { return m_instanceName; };
         void        newURL(const std::string& url) { m_url = url; };
         void        start();
         void        stop();
@@ -69,6 +75,7 @@ class OPCUA
                     m_data = data;
                 }
         void        setSecMode(const std::string& secMode);
+		void        setInstanceName(const std::string& instanceName) { m_instanceName = instanceName; };
         void        setSecPolicy(const std::string& secPolicy);
         void        setAuthPolicy(const std::string& authPolicy) { m_authPolicy = authPolicy; }
         void        setUsername(const std::string& username) { m_username = username; }
@@ -80,48 +87,72 @@ class OPCUA
         void        setRevocationList(const std::string& cert) { m_caCrl = cert; }
         void        setTraceFile(const std::string& traceFile);
         void        setAssetNaming(const std::string& scheme);
+        std::string	&getUsername() { return m_username; }
+        std::string	&getPassword() { return m_password; }
+
 	void        dataChange(const char *nodeId, const SOPC_DataValue *value);
-	void	    disconnect(const uint32_t connectionId);
+	void	    disconnect();
 	void	    retry();
     private:
+
+	class OPCUASecurity
+	{
+		public:
+			OPCUASecurity();
+			~OPCUASecurity();
+			const char* security_policy;
+			OpcUa_MessageSecurityMode security_mode;
+			OpcUa_UserTokenType tokenType;
+			char* userPolicyId;
+	};
 
 	class Node
 	{
 		public:
-				Node(uint32_t connId, const std::string& nodeId);
+				Node(SOPC_ClientConnection *connection, const std::string& nodeId);
 				Node(const std::string& nodeId, const std::string& BrowseName);
 				std::string	getBrowseName() { return m_browseName; };
-				uint32_t	getType() { return m_type; };
 				std::string	getNodeId() { return m_nodeID; };
 				OpcUa_NodeClass	getNodeClass() { return m_nodeClass; };
 				void		duplicateBrowseName();
 		private:
 				const std::string	m_nodeID;
 				std::string		m_browseName;
-				uint32_t		m_type;
 				OpcUa_NodeClass		m_nodeClass;
 	};
     private:
         int         		subscribe();
-	void			browse(const std::string& nodeId, std::vector<std::string>&);
+	SOPC_ReturnStatus	initializeS2sdk(const char *traceFilePath);
+	void				uninitializeS2sdk();
+	SOPC_ReturnStatus	createS2Subscription();
+	SOPC_ReturnStatus	deleteS2Subscription();
+	SOPC_ReturnStatus	createS2MonitoredItems(char *const *nodeIds, const size_t numNodeIds);
+	void			browseVariables(const std::string& nodeId, std::vector<std::string>&);
+	void			browseObjects(const std::string& nodeId, std::set<string> &objectNodeIds);
     void            getNodeFullPath(const std::string &nodeId, std::string& path);
     void            setRetryThread(bool start);
-	SOPC_ClientHelper_GetEndpointsResult
+	OpcUa_GetEndpointsResponse
 				*GetEndPoints(const char *endPointUrl);
 	std::string		securityMode(OpcUa_MessageSecurityMode mode);
 	std::string		nodeClassStr(OpcUa_NodeClass nodeClass);
 	void			resolveDuplicateBrowseNames();
 	bool 			checkFiltering(const std::string& browseName, OpcUa_NodeClass nodeClass, bool isDirectlySubscribed=false);
+	bool			writeS2ConfigXML(const std::string &xmlFilePath, const OPCUASecurity &security,
+						const std::string &clientPublic,
+						const std::string &clientKey,
+						const std::string &serverPublic);
 	
-	// void			getParents();
-	int32_t			m_connectionId;
-	int32_t			m_configurationId;
+	SOPC_ClientConnection *m_connection;
+	SOPC_ClientHelper_Subscription *m_subscription;
+	char 			**m_nodeIds;
+	size_t			m_numNodeIds;
         std::vector<std::string>
 				m_subscriptions;	// The user subscriptions
 	std::map<std::string, Node *>
 				m_nodes;		// The nodes being monitored
         std::string            	m_url;
         std::string            	m_asset;
+		std::string				m_instanceName;
         void                	(*m_ingest)(void *, Reading);
         void                	*m_data;
         std::mutex            	m_configMutex;
@@ -144,20 +175,13 @@ class OPCUA
         std::string            	m_caCrl;
         
         int64_t             	m_publishPeriod;
-        uint16_t             	m_tokenTarget;
         int                 	m_nodeIdsSize;
         int                 	m_miBlockSize;
 		
-        bool                 	m_disableCertVerif;
         char                 	*m_traceFile;
         uint32_t             	m_maxKeepalive;
         bool                    m_includePathAsMetadata;
         std::string             m_metaDataName;
-	char		    *m_path_cert_auth;
-	char			*m_path_crl;
-	char			*m_path_cert_srv;
-	char			*m_path_cert_cli;
-	char			*m_path_key_cli;
 	std::atomic<bool> m_stopped;
 	std::atomic<bool> m_readyForData;
 	std::thread		*m_background;
