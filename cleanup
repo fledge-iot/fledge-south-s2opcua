@@ -7,7 +7,7 @@ if [ "$continue" != 'YES' ]; then
     echo Cleanup not done
 else
     rm -rf check-0.15.2 && rm -rf check-0.15.2.tar.gz*
-    rm -rf expat-2.6.2 && rm -rf expat-2.6.2.tar.gz*
+    rm -rf libexpat
     rm -rf mbedtls-2.28.7 && rm -rf v2.28.7.tar.gz*
     rm -rf S2OPC
     echo Cleanup completed

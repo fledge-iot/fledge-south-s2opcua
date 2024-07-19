@@ -41,16 +41,17 @@ else
 fi
 
 # libexpat:
-wget https://github.com/libexpat/libexpat/releases/download/R_2_6_2/expat-2.6.2.tar.gz
-tar xzvf expat-2.6.2.tar.gz
+libexpat_version="2.6.0"
+libexpat_branch="R_${libexpat_version//./_}"
+git clone https://github.com/libexpat/libexpat.git --branch ${libexpat_branch} --depth 1
 (
-	cd expat-2.6.2
-	mkdir build
-	cd build
-	cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_POSITION_INDEPENDENT_CODE=ON -DEXPAT_SHARED_LIBS=OFF ..
-	make
+	cd libexpat/expat
+	./buildconf.sh && \
+	./configure && \
+	make && \
 	sudo make install
 )
+
 
 # libcheck:
 wget https://github.com/libcheck/check/releases/download/0.15.2/check-0.15.2.tar.gz
