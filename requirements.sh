@@ -41,10 +41,10 @@ else
 fi
 
 # libexpat:
-wget https://github.com/libexpat/libexpat/releases/download/R_2_6_0/expat-2.6.0.tar.gz
-tar xzvf expat-2.6.0.tar.gz
+wget https://github.com/libexpat/libexpat/releases/download/R_2_6_2/expat-2.6.2.tar.gz
+tar xzvf expat-2.6.2.tar.gz
 (
-	cd expat-2.6.0
+	cd expat-2.6.2
 	mkdir build
 	cd build
 	cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_POSITION_INDEPENDENT_CODE=ON -DEXPAT_SHARED_LIBS=OFF ..

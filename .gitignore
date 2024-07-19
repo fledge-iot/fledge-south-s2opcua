@@ -5,4 +5,4 @@ S2OPC
 check-0.15.2.tar.gz
 check-0.15.2
 include/sopc_encodeabletype.h
-libexpat
+expat-2.6.2
