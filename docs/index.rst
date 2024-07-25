@@ -106,9 +106,9 @@ OPC UA Subscriptions
 --------------------
 The OPC UA Subscriptions tab allows you to define the Variables to be read from the OPC UA server's namespace:
 
-+-----------+
-| |opcua_1| |
-+-----------+
++-----------------------+
+| |opcua_subscriptions| |
++-----------------------+
 
 Information from Variables is used to define Assets and Datapoints in Fledge.
 See the :ref:`Subscriptions` section for a description of OPC UA Objects and Variables and how to specify them.
