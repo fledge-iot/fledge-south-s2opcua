@@ -5,7 +5,7 @@
  *
  * Released under the Apache 2.0 Licence
  *
- * Author: Amandeep Singh Arora
+ * Author: Amandeep Singh Arora, Ray Verhoeff
  */
 
 #include <opcua.h>
@@ -132,11 +132,11 @@ static void ClientConnectionEvent(SOPC_ClientConnection *config,
 	case SOPC_ClientConnectionEvent_Disconnected:
 		if (SOPC_IsGoodStatus(status))
 		{
-			Logger::getLogger()->debug("Disconnection event received");
+			Logger::getLogger()->warn("Disconnection event received");
 		}
 		else
 		{
-			Logger::getLogger()->debug("Disconnection event received with error 0x%08X", status);
+			Logger::getLogger()->error("Disconnection event received with error 0x%08X", status);
 		}
 		opcua->disconnect();
 		break;
@@ -152,7 +152,7 @@ static void ClientConnectionEvent(SOPC_ClientConnection *config,
  * Callback when Monitored Item values are received by a Subscription
  * 
  * @param subscription		Subscription that received Monitored Item data changes
- * @param status			Subscription status code
+ * @param status			Publish service ResponseHeader ServiceResult
  * @param notificationType	Type of notification received
  * @param nbNotifElts		Number of items in the notification Monitored Items and monitoredItemCtxArray arrays
  * @param notification		Notification of type indicated by notificationType
@@ -166,12 +166,33 @@ static void subscriptionCallback(const SOPC_ClientHelper_Subscription *subscript
 								 uintptr_t *monitoredItemCtxArray)
 {
 	SOPC_UNUSED_ARG(subscription);
-	if (SOPC_IsGoodStatus(status) && notificationType && notificationType == &OpcUa_DataChangeNotification_EncodeableType)
+	if (SOPC_IsGoodStatus(status))
 	{
-		OpcUa_DataChangeNotification *dataChanges = (OpcUa_DataChangeNotification *)notification;
-		for (uint32_t i = 0; i < nbNotifElts; i++)
+		if (notificationType && notificationType == &OpcUa_DataChangeNotification_EncodeableType)
 		{
-			opcua->dataChange((char *)monitoredItemCtxArray[i], &dataChanges->MonitoredItems[i].Value);
+			OpcUa_DataChangeNotification *dataChanges = (OpcUa_DataChangeNotification *)notification;
+			for (uint32_t i = 0; i < nbNotifElts; i++)
+			{
+				opcua->dataChange((char *)monitoredItemCtxArray[i], &dataChanges->MonitoredItems[i].Value);
+			}
+		}
+		else
+		{
+			Logger::getLogger()->warn("Data Change Notification unexpected type %u", notificationType ? notificationType->TypeId : 0);
+		}
+	}
+	else if (opcua->readyForData())
+	{
+		// Log an error message only if the plugin should be processing data.
+		// If no new data values are available when the S2OPC Toolkit makes a Publish request,
+		// the Service Result is 'OpcUa_BadNothingToDo' which is not an error.
+		if (status == OpcUa_BadNothingToDo)
+		{
+			opcua->incrementNothingToDo();
+		}
+		else
+		{
+			Logger::getLogger()->error("Data Change Notification error 0x%08X", status);
 		}
 	}
 }
@@ -291,6 +312,88 @@ static bool IsValidParentReferenceId(const SOPC_NodeId *referenceId)
 	}
 	
 	return found;
+}
+
+/**
+ * Determine the Data Change Filter Trigger Type from a string
+ *
+ * @param triggerTypeString	Data Change Filter Trigger Type string
+ * @return Data Change Filter Trigger Type
+ */
+static OpcUa_DataChangeTrigger dcfTriggerType(const std::string &triggerTypeString)
+{
+	if (triggerTypeString.compare("Status") == 0)
+		return OpcUa_DataChangeTrigger_Status;
+	else if (triggerTypeString.compare("Status + Value") == 0)
+		return OpcUa_DataChangeTrigger_StatusValue;
+	else if (triggerTypeString.compare("Status + Value + Timestamp") == 0)
+		return OpcUa_DataChangeTrigger_StatusValueTimestamp;
+	else
+	{
+		return OpcUa_DataChangeTrigger_SizeOf;
+	}
+}
+
+/**
+ * Generate a string representation of Data Change Filter Trigger Type
+ *
+ * @param triggerType	Data Change Filter Trigger Type
+ * @return Data Change Filter Trigger Type string
+ */
+static std::string dcfTriggerType(const OpcUa_DataChangeTrigger triggerType)
+{
+	switch (triggerType)
+	{
+	case OpcUa_DataChangeTrigger_Status:
+		return std::string("Status");
+	case OpcUa_DataChangeTrigger_StatusValue:
+		return std::string("Status + Value");
+	case OpcUa_DataChangeTrigger_StatusValueTimestamp:
+		return std::string("Status + Value + Timestamp");
+	default:
+		return std::string("Unknown");
+	}
+}
+
+/**
+ * Determine the Data Change Filter Deadband Type from a string
+ *
+ * @param deadbandTypeString	Data Change Filter Deadband Type string
+ * @return Data Change Filter Deadband Type
+ */
+static OpcUa_DeadbandType dcfDeadbandType(const std::string &deadbandTypeString)
+{
+	if (deadbandTypeString.compare("None") == 0)
+		return OpcUa_DeadbandType_None;
+	else if (deadbandTypeString.compare("Absolute") == 0)
+		return OpcUa_DeadbandType_Absolute;
+	else if (deadbandTypeString.compare("Percent") == 0)
+		return OpcUa_DeadbandType_Percent;
+	else
+	{
+		return OpcUa_DeadbandType_SizeOf;
+	}
+}
+
+/**
+ * Generate a string representation of Data Change Filter Deadband Type
+ *
+ * @param deadbandTypeString	Data Change Filter Deadband Type
+ * @return Data Change Filter Deadband Type string
+ */
+static std::string dcfDeadbandType(const OpcUa_DeadbandType deadbandType)
+{
+	switch (deadbandType)
+	{
+	case OpcUa_DeadbandType_None:
+		return std::string("None");
+	case OpcUa_DeadbandType_Absolute:
+		return std::string("Absolute");
+	case OpcUa_DeadbandType_Percent:
+		return std::string("Percent");
+	default:
+		return std::string("Unknown");
+	}
 }
 
 /**
@@ -486,6 +589,9 @@ OPCUA::OPCUA() : m_publishPeriod(1000),
 				 m_maxKeepalive(30),
 				 m_numOpcUaValues(0),
 				 m_numOpcUaOverflows(0),
+				 m_numOpcUaNothingToDo(0),
+				 m_tstart(0),
+				 m_totalElapsedSeconds(0),
 				 m_numNodeIds(0),
 				 m_nodeIds(NULL),
 				 m_background(NULL),
@@ -494,7 +600,12 @@ OPCUA::OPCUA() : m_publishPeriod(1000),
 				 m_connection(NULL),
 				 m_subscription(NULL),
 				 m_assetNaming(ASSET_NAME_SINGLE),
-				 m_secMode(OpcUa_MessageSecurityMode_Invalid)
+				 m_secMode(OpcUa_MessageSecurityMode_Invalid),
+				 m_dcfEnabled(false),
+				 m_dcfTriggerType(OpcUa_DataChangeTrigger_StatusValue),
+				 m_dcfDeadbandType(OpcUa_DeadbandType_None),
+				 m_dcfDeadbandValue(0.0)
+
 {
 	m_connected.store(false);
 	m_stopped.store(false);
@@ -538,6 +649,11 @@ void OPCUA::clearConfig()
 	m_maxKeepalive = 30;
 	m_miBlockSize = 100;
 	m_secMode = OpcUa_MessageSecurityMode_Invalid;
+	m_dcfEnabled = false;
+	m_dcfTriggerType = OpcUa_DataChangeTrigger_StatusValue;
+	m_dcfDeadbandType = OpcUa_DeadbandType_None;
+	m_dcfDeadbandValue = 0.0;
+
 	if (m_traceFile)
 	{
 		free(m_traceFile);
@@ -765,7 +881,7 @@ void OPCUA::parseConfig(ConfigCategory &config)
 		}
 		else
 		{
-			Logger::getLogger()->info("Invalid filter regex '%s' in config, disabling filtering", val.c_str());
+			Logger::getLogger()->warn("Invalid filter regex '%s' in config, disabling filtering", val.c_str());
 			setFilterEnabled(false);
 		}
 	}
@@ -800,6 +916,29 @@ void OPCUA::parseConfig(ConfigCategory &config)
 		}
 		else
 			Logger::getLogger()->info("Filter action set to '%s' ", val.c_str());
+	}
+
+	if (config.itemExists("dcfEnabled"))
+	{
+		if (config.getValue("dcfEnabled").compare("true") == 0)
+		{
+			m_dcfEnabled = true;
+		}
+	}
+
+	if (config.itemExists("dcfTriggerType"))
+	{
+		m_dcfTriggerType = dcfTriggerType(config.getValue("dcfTriggerType"));
+	}
+
+	if (config.itemExists("dcfDeadbandType"))
+	{
+		m_dcfDeadbandType = dcfDeadbandType(config.getValue("dcfDeadbandType"));
+	}
+
+	if (config.itemExists("dcfDeadbandValue"))
+	{
+		m_dcfDeadbandValue = std::stod(config.getValue("dcfDeadbandValue"));
 	}
 }
 
@@ -1093,12 +1232,12 @@ int OPCUA::subscribe()
 	
 	if (m_nodeIds == NULL)
 	{
-		logger->error("Failed to allocate memory for %d subscriptions", variables.size());
+		logger->error("Failed to allocate memory for %u subscriptions", variables.size());
 		return 2;
 	}
 	memset((void *) m_nodeIds, 0, variables.size() * sizeof(char *));
 
-	logger->info("Begin processing %d Variables", (int)variables.size());
+	logger->info("Begin processing %u Variables", variables.size());
 	
 	int i = 0;
 	for (auto it = variables.cbegin(); it != variables.cend(); it++)
@@ -1160,12 +1299,18 @@ int OPCUA::subscribe()
 	SOPC_ReturnStatus status = SOPC_STATUS_OK;
 	if ((status = createS2Subscription()) == SOPC_STATUS_OK)
 	{
-		Logger::getLogger()->info("Subscription created");
+		logger->info("Subscription created");
 	}
 	else
 	{
-		Logger::getLogger()->error("Error %d creating Subscription", (int)status);
+		logger->error("Error %d creating Subscription", (int)status);
 		return (int)status;
+	}
+
+	if (m_dcfEnabled)
+	{
+		logger->info("DataChangeFilter: Trigger Type: '%s' Deadband Type: '%s' Deadband: %.3f",
+								   dcfTriggerType(m_dcfTriggerType).c_str(), dcfDeadbandType(m_dcfDeadbandType).c_str(), m_dcfDeadbandValue);
 	}
 
 	m_numNodeIds = i;
@@ -1173,6 +1318,7 @@ int OPCUA::subscribe()
 	size_t miBlockSize = (size_t)m_miBlockSize;
 	int callCount = 0;
 	i = 0;
+	bool logRevisions = true;
 	bool done = false;
 	do
 	{
@@ -1183,10 +1329,12 @@ int OPCUA::subscribe()
 			done = true;
 		}
 
+		size_t numMonitoredItemErrors = 0;
 		logger->debug("createS2MonitoredItems call: i=%d, numNodeIdsToAdd=%d, totalMonitoredItems=%u, m_nodes.size()=%u", i, numNodeIdsToAdd, m_numNodeIds, m_nodes.size());
-		if ((status = createS2MonitoredItems(&m_nodeIds[i], numNodeIdsToAdd)) == SOPC_STATUS_OK)
+		if ((status = createS2MonitoredItems(&m_nodeIds[i], numNodeIdsToAdd, logRevisions, &numMonitoredItemErrors)) == SOPC_STATUS_OK)
 		{
-			actualMonitoredItems += numNodeIdsToAdd;
+			actualMonitoredItems += (numNodeIdsToAdd - numMonitoredItemErrors);
+			logRevisions = false;
 		}
 
 		callCount++;
@@ -1198,19 +1346,20 @@ int OPCUA::subscribe()
 	{
 		logger->info("Added %u Monitored Items in %d calls",  actualMonitoredItems, callCount);
 		m_readyForData.store(true);
+		m_tstart = time(0);
 	}
 	else
 	{
-		logger->error("Error %d adding Monitored Items. Items added: %u of %u. CallCount: %d",  actualMonitoredItems, m_numNodeIds, callCount);
+		logger->error("Error %d adding Monitored Items. Items added: %u of %u. CallCount: %d", status, actualMonitoredItems, m_numNodeIds, callCount);
 	}
 	
 	return (int)status;
 }
 
 /**
- * Initialize the S2OPC Toolkit
+ * Initialise the S2OPC Toolkit
  *
- * @param traceFilePath	Full path of the trace file (optional). If NULL, do not create a trace file.
+ * @param traceFilePath	Full path of the trace file. If NULL, do not create a trace file.
  * @return				S2OPC status code
  */
 SOPC_ReturnStatus OPCUA::initializeS2sdk(const char *traceFilePath)
@@ -1239,17 +1388,17 @@ SOPC_ReturnStatus OPCUA::initializeS2sdk(const char *traceFilePath)
 		if (initStatus != SOPC_STATUS_OK)
 		{
 			Logger::getLogger()->fatal("Unable to initialise S2OPC CommonHelper library: %d", (int)initStatus);
-			throw runtime_error("Unable to initialise CommonHelper library");
+			throw runtime_error("Unable to initialise S2OPC CommonHelper library");
 		}
 
 		initStatus = SOPC_ClientConfigHelper_Initialize();
 		if (initStatus != SOPC_STATUS_OK)
 		{
 			Logger::getLogger()->fatal("Unable to initialise S2OPC ClientHelper library");
-			throw runtime_error("Unable to initialise ClientHelper library");
+			throw runtime_error("Unable to initialise S2OPC ClientHelper library");
 		}
 
-		Logger::getLogger()->debug("S2OPC Toolkit initialized");
+		Logger::getLogger()->debug("S2OPC Toolkit initialised");
 		m_init = true;
 	}
 
@@ -1266,19 +1415,22 @@ void OPCUA::uninitializeS2sdk()
 		SOPC_ClientConfigHelper_Clear();
 		SOPC_CommonHelper_Clear();
 		m_init = false;
-		Logger::getLogger()->debug("S2OPC Toolkit uninitialized");
+		Logger::getLogger()->debug("S2OPC Toolkit uninitialised");
 	}
 }
 
 /**
  * Create an S2OPC Toolkit Subscription
+ *
+ * @return		S2OPC status code
  */
 SOPC_ReturnStatus OPCUA::createS2Subscription()
 {
 	SOPC_ReturnStatus status = SOPC_STATUS_OK;
 
-	// Toolkit routine 'SOPC_CreateSubscriptionRequest_CreateDefault()' does the same thing as 'SOPC_CreateSubscriptionRequest_Create(500, 10, 3, 1000, true, 0)'
-	m_subscription = SOPC_ClientHelperNew_CreateSubscription(m_connection, SOPC_CreateSubscriptionRequest_CreateDefault(), subscriptionCallback, (uintptr_t)NULL);
+	OpcUa_CreateSubscriptionRequest *subscriptionRequest = SOPC_CreateSubscriptionRequest_Create(500.0, 10, 3, 1000, true, 0);
+
+	m_subscription = SOPC_ClientHelperNew_CreateSubscription(m_connection, subscriptionRequest, subscriptionCallback, (uintptr_t)NULL);
 	if (m_subscription == NULL)
 	{
 		Logger::getLogger()->error("SOPC_ClientHelperNew_CreateSubscription returned NULL");
@@ -1293,12 +1445,12 @@ SOPC_ReturnStatus OPCUA::createS2Subscription()
 			m_subscription, &revisedPublishingInterval, &revisedLifetimeCount, &revisedMaxKeepAliveCount);
 		if (SOPC_STATUS_OK == status)
 		{
-			Logger::getLogger()->info("Revised subscription parameters: publishingInterval: %.1f ms, lifetimeCount: %u cycles, keepAliveCount: %u cycles",
+			Logger::getLogger()->info("Revised Subscription parameters: publishingInterval: %.1f ms, lifetimeCount: %u cycles, keepAliveCount: %u cycles",
 									  revisedPublishingInterval, revisedLifetimeCount, revisedMaxKeepAliveCount);
 		}
 		else
 		{
-			Logger::getLogger()->info("Error %d: Failed to retrieve subscription revised parameters", (int)status);
+			Logger::getLogger()->error("Error %d: Failed to retrieve subscription revised parameters", (int)status);
 		}
 	}
 
@@ -1307,6 +1459,8 @@ SOPC_ReturnStatus OPCUA::createS2Subscription()
 
 /**
  * Delete an S2OPC Toolkit Subscription
+ *
+ * @return		S2OPC status code
  */
 SOPC_ReturnStatus OPCUA::deleteS2Subscription()
 {
@@ -1326,15 +1480,36 @@ SOPC_ReturnStatus OPCUA::deleteS2Subscription()
  *
  * @param nodeIds		Array of pointers to NodeId strings
  * @param numNodeIds	Number of NodeIds to add
+ * @param logRevisions	If true, log revised sampling interval and queue size
+ * @param numErrors		Number of NodeIds in error that cannot become MonitoredItems (returned)
  * @return				S2OPC status code
  */
-SOPC_ReturnStatus OPCUA::createS2MonitoredItems(char *const *nodeIds, const size_t numNodeIds)
+SOPC_ReturnStatus OPCUA::createS2MonitoredItems(char *const *nodeIds, const size_t numNodeIds, bool logRevisions, size_t *numErrors)
 {
 	SOPC_ReturnStatus status = SOPC_STATUS_OK;
 
 	OpcUa_CreateMonitoredItemsRequest *monitoredItemsRequest = SOPC_CreateMonitoredItemsRequest_CreateDefaultFromStrings(0, numNodeIds, nodeIds, OpcUa_TimestampsToReturn_Source);
 	OpcUa_CreateMonitoredItemsResponse monitoredItemsResponse;
 	OpcUa_CreateMonitoredItemsResponse_Initialize(&monitoredItemsResponse);
+
+	for (int32_t j = 0; j < monitoredItemsRequest->NoOfItemsToCreate; j++)
+	{
+		SOPC_ExtensionObject *dataChangeFilter = m_dcfEnabled ? SOPC_MonitoredItem_DataChangeFilter(m_dcfTriggerType, m_dcfDeadbandType, m_dcfDeadbandValue) : NULL;
+
+		status = SOPC_CreateMonitoredItemsRequest_SetMonitoredItemParams(
+			monitoredItemsRequest,
+			j,
+			OpcUa_MonitoringMode_Reporting,
+			0,
+			0.0,										// samplingInterval: 0.0 means best possible rate supported by the server
+			dataChangeFilter,
+			std::numeric_limits<uint32_t>::max(),		// queueSize: MAXUINT32 means largest queue size supported by the server
+			1);
+		if (SOPC_STATUS_OK != status)
+		{
+			Logger::getLogger()->error("Error %d: SOPC_CreateMonitoredItemsRequest_SetMonitoredItemParams", (int)status);
+		}
+	}
 
 	const uintptr_t *nodeIdsCtxArray = (const uintptr_t *)nodeIds;
 	status = SOPC_ClientHelperNew_Subscription_CreateMonitoredItems(m_subscription, monitoredItemsRequest, nodeIdsCtxArray,
@@ -1351,12 +1526,26 @@ SOPC_ReturnStatus OPCUA::createS2MonitoredItems(char *const *nodeIds, const size
 			if (SOPC_IsGoodStatus(monitoredItemsResponse.Results[i].StatusCode))
 			{
 				oneSucceeded = true;
+				if (logRevisions)
+				{
+					// The OPC UA server must respond with its revised sampling interval and queue size.
+					// See OPC UA Specification, Part 4, Section 7.21: MonitoringParameters
+					// https://reference.opcfoundation.org/Core/Part4/v105/docs/7.21
+					Logger::getLogger()->info("MonitoredItem RevisedSamplingInterval: %.1f ms RevisedQueueSize: %u",
+											  monitoredItemsResponse.Results[i].RevisedSamplingInterval,
+											  monitoredItemsResponse.Results[i].RevisedQueueSize);
+					logRevisions = false;
+				}
 				Logger::getLogger()->debug("MonitoredItem %d for Node %s Id %u", i, m_nodeIds[i], monitoredItemsResponse.Results[i].MonitoredItemId);
 			}
 			else
 			{
-				Logger::getLogger()->error("Error %u: Creation of MonitoredItem for Node %s failed",
+				// Execution will land here if a Data Change Filter with Deadband is configured for a non-numeric type
+				// or if the Deadband Type is not supported by the OPC UA server.
+				// Possible Status Codes are BadMonitoredItemFilterUnsupported (0x80440000) and BadFilterNotAllowed (0x80450000).
+				Logger::getLogger()->error("Error 0x%08X: Creation of MonitoredItem for Node %s failed",
 										   monitoredItemsResponse.Results[i].StatusCode, m_nodeIds[i]);
+				(*numErrors)++;
 			}
 		}
 		if (!oneSucceeded)
@@ -1823,6 +2012,7 @@ void OPCUA::stop()
 	Logger::getLogger()->debug("Calling OPCUA::stop");
 	m_stopped.store(true);
 	m_readyForData.store(false);
+	time_t tend = time(0);
 	setRetryThread(false);
 	if (m_connected.load())
 	{
@@ -1834,7 +2024,7 @@ void OPCUA::stop()
 
 			// It is not necessary to delete the MonitoredItems before deleting the Subscription.
 			// The OPC UA Specification says that the OPC UA Server must delete all MonitoredItems
-			// if the Subscription is deleted. See Part 5, Section 5.13.8 Delete Subscriptions.
+			// if the Subscription is deleted. See Part 5, Section 5.13.8: Delete Subscriptions.
 			// https://reference.opcfoundation.org/Core/Part4/v105/docs/5.13.8
 			if ((res = deleteS2Subscription()) == SOPC_STATUS_OK)
 			{
@@ -1858,12 +2048,7 @@ void OPCUA::stop()
 		}
 	}
 
-	if (m_init)
-	{
-		Logger::getLogger()->debug("SOPCInit Stop");
-		uninitializeS2sdk();
-		Logger::getLogger()->debug("SOPCInit Stopped");
-	}
+	uninitializeS2sdk();
 
 	// Remove the PKI directory
 	std::string instanceRoot = getDataDir() + "/tmp/s2opcua/" + m_instanceName;
@@ -1877,7 +2062,13 @@ void OPCUA::stop()
 
 	clearData();
 	clearConfig();
-	Logger::getLogger()->info("Total Data Values sent: %lu Total Overflows:  %lu", m_numOpcUaValues, m_numOpcUaOverflows);
+
+	m_totalElapsedSeconds += (tend - m_tstart);
+	Logger::getLogger()->info("Total Data Values sent: %lu Total Overflows: %lu Data Rate: %.1f values/sec",
+		m_numOpcUaValues, m_numOpcUaOverflows, ((double)m_numOpcUaValues)/((double)m_totalElapsedSeconds));
+	Logger::getLogger()->debug("OpcUa_BadNothingToDo: %lu Rate: %.1f warnings/sec",
+		m_numOpcUaNothingToDo, ((double)m_numOpcUaNothingToDo)/((double)m_totalElapsedSeconds));
+
 	Logger::getLogger()->debug("Leaving OPCUA::stop");
 }
 
@@ -2119,7 +2310,7 @@ void OPCUA::browseObjects(const string &nodeid, std::set<string> &objectNodeIds)
 			if (parentNode->getNodeClass() == OpcUa_NodeClass_Object)
 			{
 				m_nodeObjects.insert(parentNode);
-				Logger::getLogger()->debug("Parent insert %s; %d items", parentNode->getNodeId().c_str(), m_nodeObjects.size());
+				Logger::getLogger()->debug("Parent insert %s; %u items", parentNode->getNodeId().c_str(), m_nodeObjects.size());
 			}
 			else
 			{
@@ -2280,7 +2471,7 @@ void OPCUA::browseVariables(const string &nodeid, vector<string> &variables)
 		if (parentNode->getNodeClass() == OpcUa_NodeClass_Object)
 		{
 			m_nodeObjects.insert(parentNode);
-			Logger::getLogger()->debug("Parent insert %s; %d items", parentNode->getNodeId().c_str(), m_nodeObjects.size());
+			Logger::getLogger()->debug("Parent insert %s; %u items", parentNode->getNodeId().c_str(), m_nodeObjects.size());
 		}
 		else
 		{
