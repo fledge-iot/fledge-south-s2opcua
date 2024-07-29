@@ -31,6 +31,7 @@ extern "C" {
 #include "sopc_mem_alloc.h"
 #include "sopc_encodeable.h"
 #include "opcua_identifiers.h"
+#include "opcua_statuscodes.h"
 };
 
 class OpcUaClient;
@@ -87,6 +88,8 @@ class OPCUA
         void        setRevocationList(const std::string& cert) { m_caCrl = cert; }
         void        setTraceFile(const std::string& traceFile);
         void        setAssetNaming(const std::string& scheme);
+		bool		readyForData() {return (!m_stopped.load() && m_readyForData.load());}
+		void		incrementNothingToDo() {m_numOpcUaNothingToDo++;}
         std::string	&getUsername() { return m_username; }
         std::string	&getPassword() { return m_password; }
 
@@ -126,7 +129,7 @@ class OPCUA
 	void				uninitializeS2sdk();
 	SOPC_ReturnStatus	createS2Subscription();
 	SOPC_ReturnStatus	deleteS2Subscription();
-	SOPC_ReturnStatus	createS2MonitoredItems(char *const *nodeIds, const size_t numNodeIds);
+	SOPC_ReturnStatus	createS2MonitoredItems(char *const *nodeIds, const size_t numNodeIds, bool logRevisions, size_t *numErrors);
 	void			browseVariables(const std::string& nodeId, std::vector<std::string>&);
 	void			browseObjects(const std::string& nodeId, std::set<string> &objectNodeIds);
     void            getNodeFullPath(const std::string &nodeId, std::string& path);
@@ -160,6 +163,7 @@ class OPCUA
         long                	m_reportingInterval;
         unsigned long           m_numOpcUaValues;
         unsigned long           m_numOpcUaOverflows;
+        unsigned long           m_numOpcUaNothingToDo;
 
         std::string         	m_secPolicy;
         OpcUa_MessageSecurityMode m_secMode;
@@ -201,6 +205,12 @@ class OPCUA
 
 	bool				m_filterEnabled;
 	std::string			m_filterRegex;
+	time_t				m_tstart;
+	unsigned long		m_totalElapsedSeconds;
+	bool				m_dcfEnabled;
+	OpcUa_DataChangeTrigger	m_dcfTriggerType;
+	OpcUa_DeadbandType		m_dcfDeadbandType;
+	double				m_dcfDeadbandValue;
 
 	enum NodeFilterScope {
 		SCOPE_OBJECT=1,
