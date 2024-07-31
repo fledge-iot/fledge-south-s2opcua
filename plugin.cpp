@@ -32,7 +32,7 @@ static const char *default_config = QUOTE({
         "plugin" : {
                 "description" : "Safe & Secure OPC UA data change plugin",
                 "type" : "string",
-                "default" : "PLUGIN_NAME",
+                "default" : PLUGIN_NAME,
                 "readonly" : "true"
         },
         "asset" : {
