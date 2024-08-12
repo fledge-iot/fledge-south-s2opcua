@@ -127,6 +127,7 @@ class OPCUA
         int         		subscribe();
 	SOPC_ReturnStatus	initializeS2sdk(const char *traceFilePath);
 	void				uninitializeS2sdk();
+	bool				updateS2parameters();
 	SOPC_ReturnStatus	createS2Subscription();
 	SOPC_ReturnStatus	deleteS2Subscription();
 	SOPC_ReturnStatus	createS2MonitoredItems(char *const *nodeIds, const size_t numNodeIds, bool logRevisions, size_t *numErrors);

@@ -611,6 +611,7 @@ OPCUA::OPCUA() : m_publishPeriod(1000),
 	m_stopped.store(false);
 	m_readyForData.store(false);
 	opcua = this;
+	updateS2parameters();
 }
 
 /**
@@ -1417,6 +1418,32 @@ void OPCUA::uninitializeS2sdk()
 		m_init = false;
 		Logger::getLogger()->debug("S2OPC Toolkit uninitialised");
 	}
+}
+
+/**
+ * Update S2OPC Toolkit message encoding parameters
+ *
+ * @return		True if parameters successfully updated
+ */
+bool OPCUA::updateS2parameters()
+{
+	// The S2OPC Toolkit default value for maximum number of message chunks to accept in an OPC UA service response (receive_max_nb_chunks) is too low (that is, 5).
+	// This is too low for OPC UA servers on distant or noisy networks that break messages into many smaller chunks.
+	// Update the S2OPC Toolkit encoding constants by doubling 'receive_max_nb_chunks'.
+	// This can be done only once for the process before any S2OPC Tookit initialization has taken place.
+	SOPC_Common_EncodingConstants encodingConstants = SOPC_Common_GetDefaultEncodingConstants();
+
+	encodingConstants.receive_max_nb_chunks = 2 * SOPC_DEFAULT_RECEIVE_MAX_NB_CHUNKS;
+
+	bool parameterUpdateOK = SOPC_Common_SetEncodingConstants(encodingConstants);
+
+	if (!parameterUpdateOK)
+	{
+		Logger::getLogger()->warn("updateS2parameters: Unable to change 'receive_max_nb_chunks' from %u to %u",
+								  (uint32_t)SOPC_DEFAULT_RECEIVE_MAX_NB_CHUNKS, encodingConstants.receive_max_nb_chunks);
+	}
+
+	return parameterUpdateOK;
 }
 
 /**
