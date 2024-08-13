@@ -19,7 +19,7 @@
 
 .. |generate_certs| raw:: html
 
-    <a href="https://gitlab.com/systerel/S2OPC/-/blob/master/samples/ClientServer/data/cert/generate_certs.sh"><code>generate_certs.sh</code> example script</a>
+    <a href="https://gitlab.com/systerel/S2OPC/-/blob/master/samples/ClientServer/data/cert/generate_certs.sh"> example script</a>
 
 OPC UA Safe & Secure South Plugin
 =================================
@@ -101,6 +101,8 @@ This is important for both *Single datapoint* and *Single Asset* naming schemes:
   - In the case of the *Single datapoint*, the asset name is the same as the datapoint name and is global for all OPC UA Variables that are monitored.
     The result of this that the same asset name and datapoint name would be used to store multiple OPC UA Variables.
   - In the case of *Single Asset*, datapoints names are kept within a single asset; an error would occur if two datapoints had the same name.
+
+.. _OPC UA Subscriptions:
 
 OPC UA Subscriptions
 --------------------
@@ -246,6 +248,8 @@ The OPC UA Security tab contains a set of configuration items that is used for s
 
   - **Certificate Revocation List**: The name of the certificate authority's Certificate Revocation List. This is a DER format certificate. If using self-signed certificates this should be left blank.
 
+.. _Subscriptions:
+
 Subscriptions
 -------------
 
@@ -322,7 +326,7 @@ To diagnose this, set the Minimum Log Level to *Debug* in the Advanced Configura
 After starting the plugin, you will see Debug messages documenting the endpoint search.
 If Security Policy mismatch is the problem, you will see a message like:
 
-.. code-block:: bash
+.. code-block:: console
 
    DEBUG: 0: Security Policy mismatch: Endpoint: 'http://opcfoundation.org/UA/SecurityPolicy#Basic256Sha256' UserIdentityToken: 'http://opcfoundation.org/UA/SecurityPolicy#Basic256' (username_basic256)(1)
 
@@ -402,7 +406,7 @@ We recommend:
 
 * Country: US
 * State: CA
-* Locality: Menlo Park
+* Locality: San Leandro
 * Organization: Dianomic
 
 Subject Alternative Name
