@@ -29,202 +29,276 @@ using namespace std;
  * Default configuration
  */
 static const char *default_config = QUOTE({
-    "plugin" : {
-           "description" : "Safe & Secure OPC UA data change plugin",
-            "type" : "string",
-            "default" : PLUGIN_NAME,
-            "readonly" : "true"
-            },
-    "asset" : {
-           "description" : "Asset name",
-            "type" : "string",
-            "default" : "s2opcua",
-            "displayName" : "Asset Name",
-            "order" : "1",
-            "mandatory": "true"
-            },
-    "url" : {
-            "description" : "URL of the OPC UA Server",
-            "type" : "string",
-            "default" : "opc.tcp://localhost:53530/OPCUA/SimulationServer",
-            "displayName" : "OPC UA Server URL",
-            "order" : "2"
-            },
-    "subscription" : {
-            "description" : "Variables to observe changes in",
-            "type" : "JSON",
-            "default" : "{ \"subscriptions\" : [  \"ns=3;i=1001\", \"ns=3;i=1002\" ] }",
-            "displayName" : "OPC UA Object Subscriptions",
-            "order" : "3"
-            },
-    "reportingInterval" : {
-            "description" : "The minimum reporting interval for data change notifications" ,
-            "type" : "integer",
-            "default" : "0",
-	    "minimum" : "0",
-            "displayName" : "Min Reporting Interval (millisec)",
-            "order" : "5"
-            },
-    "assetNaming" : {
-            "description" : "The naming scheme to use for asset read from the OPCUA server. One or more assets can be created based on a fixed prefix or the OPCUA object names.",
-            "type" : "enumeration",
-	    "options" : [ "Single datapoint", "Single datapoint object prefix", "Asset per object", "Single asset" ],
-            "default" : "Single datapoint",
-            "displayName" : "Asset Naming Scheme",
-            "order" : "6"
-            },
-    "securityMode" : {
-            "description" : "Security Mode to use while connecting to OPCUA server" ,
-            "type" : "enumeration",
-            "options":["None", "Sign", "SignAndEncrypt"],
-            "default" : "None",
-            "displayName" : "Security Mode",
-	    "group" : "OPC UA Security",
-            "order" : "7"
-            },
-    "securityPolicy" : {
-            "description" : "Security Policy to use while connecting to OPCUA server" ,
-            "type" : "enumeration",
-            "options":["None", "Basic256", "Basic256Sha256"],
-            "default" : "None",
-            "displayName" : "Security Policy",
-            "order" : "8",
-	    "group" : "OPC UA Security",
-            "validity": " securityMode == \"Sign\" || securityMode == \"SignAndEncrypt\" "
-            },
-    "userAuthPolicy" : {
-            "description" : "User authentication policy to use while connecting to OPCUA server" ,
-            "type" : "enumeration",
-            "options":["anonymous", "username"],
-            "default" : "anonymous",
-            "displayName" : "User Authentication Policy",
-	    "group" : "OPC UA Security",
-            "order" : "9"
-            },
-    "username" : {
-            "description" : "Username" ,
-            "type" : "string",
-            "default" : "",
-            "displayName" : "Username",
-            "order" : "10",
-	    "group" : "OPC UA Security",
-            "validity": " userAuthPolicy == \"username\" "
-            },
-    "password" : {
-            "description" : "Password" ,
-            "type" : "password",
-            "default" : "",
-            "displayName" : "Password",
-            "order" : "11",
-	    "group" : "OPC UA Security",
-            "validity": " userAuthPolicy == \"username\" "
-            },
-    "caCert" : {
-            "description" : "Certificate Authority file in DER format" ,
-            "type" : "string",
-            "default" : "",
-            "displayName" : "CA Certificate Authority",
-            "order" : "12",
-	    "group" : "OPC UA Security",
-            "validity": " securityMode == \"Sign\" || securityMode == \"SignAndEncrypt\" "
-            },
-    "serverCert" : {
-            "description" : "Server certificate file in DER format" ,
-            "type" : "string",
-            "default" : "",
-            "displayName" : "Server Public Certificate",
-            "order" : "13",
-	    "group" : "OPC UA Security",
-            "validity": " securityMode == \"Sign\" || securityMode == \"SignAndEncrypt\" "
-            },
-    "clientCert" : {
-            "description" : "Client certificate file in DER format" ,
-            "type" : "string",
-            "default" : "",
-            "displayName" : "Client Public Certificate",
-            "order" : "14",
-	    "group" : "OPC UA Security",
-            "validity": " securityMode == \"Sign\" || securityMode == \"SignAndEncrypt\" "
-            },
-    "clientKey" : {
-            "description" : "Client private key file in PEM format" ,
-            "type" : "string",
-            "default" : "",
-            "displayName" : "Client Private Key",
-            "order" : "15",
-	    "group" : "OPC UA Security",
-            "validity": " securityMode == \"Sign\" || securityMode == \"SignAndEncrypt\" "
-            },
-    "caCrl" : {
-            "description" : "Certificate Revocation List file in DER format" ,
-            "type" : "string",
-            "default" : "",
-            "displayName" : "Certificate Revocation List",
-            "order" : "16",
-	    "group" : "OPC UA Security",
-            "validity": " securityMode == \"Sign\" || securityMode == \"SignAndEncrypt\" "
-            },
-    "parentPathMetadata" : {
-            "description" : "Include full OPC UA path as meta data" ,
-            "type" : "boolean",
-            "default" : "false",
-            "displayName" : "Include Full OPC UA Path as meta data",
-	    "group" : "OPC UA Advanced",
-            "order" : "17"
-            },
-    "parentPath" : {
-            "description" : "Name for Full OPC UA Path meta data, if enabled" ,
-            "type" : "string",
-            "default" : "OPCUAPath",
-            "displayName" : "Full OPC UA Path meta data name",
-	    "group" : "OPC UA Advanced",
-            "order" : "18",
-            "validity": " parentPathMetadata == \"true\" "
-            },
-    "traceFile" : {
-            "description" : "Enable trace file for debugging" ,
-            "type" : "boolean",
-            "default" : "false",
-            "displayName" : "Debug Trace File",
-	    "group" : "OPC UA Advanced",
-            "order" : "19"
-            },
-    "miBlockSize" : {
-            "description" : "The number of MonitoredItems to be registered with the OPC/UA server in single call to the S2OPCUA OPCUA Toolkit" ,
-            "type" : "integer",
-            "default" : "100",
-	    "minimum" : "1",
-            "displayName" : "MonitoredItem block size",
-            "group" : "OPC UA Advanced",
-            "order" : "20"
-            },
-	"filterRegex" : {
-		"description" : "Regular expression for filtering nodes that are to be processed",
-		"type" : "string",
-		"default" : "",
-		"displayName" : "Regular expression",
-		"order" : "21",
-		"group" : "Filtering"
-		},
-	"filterScope" : {
-		"description" : "Specify the scope of the filter",
-		"type": "enumeration",
-		"options":["Object", "Variable", "Object and Variable"],
-		"default" : "Variable",
-		"displayName" : "Scope",
-		"order" : "22",
-		"group" : "Filtering"
-		},
-	"filterAction" : {
-		"description" : "Filtering action to perform",
-		"type": "enumeration",
-		"options":["Include", "Exclude"],
-		"default" : "Exclude",
-		"displayName" : "Filter action",
-		"order" : "23",
-		"group" : "Filtering"
-		}
-    });
+        "plugin" : {
+                "description" : "Safe & Secure OPC UA data change plugin",
+                "type" : "string",
+                "default" : PLUGIN_NAME,
+                "readonly" : "true"
+        },
+        "asset" : {
+                "description" : "Asset name. The Asset Naming Scheme determines how this name will be used.",
+                "type" : "string",
+                "default" : "s2opcua",
+                "displayName" : "Asset Name",
+                "order" : "1",
+                "group" : "Basic",
+                "mandatory" : "true"
+        },
+        "url" : {
+                "description" : "URL of the OPC UA Server",
+                "type" : "string",
+                "default" : "opc.tcp://localhost:53530/OPCUA/SimulationServer",
+                "displayName" : "OPC UA Server URL",
+                "group" : "Basic",
+                "order" : "2"
+        },
+        "assetNaming" : {
+                "description" : "The naming scheme to use for asset read from the OPC UA server. One or more assets can be created based on a fixed prefix or the OPC UA object names.",
+                "type" : "enumeration",
+                "options" : [
+                        "Single datapoint",
+                        "Single datapoint object prefix",
+                        "Asset per object",
+                        "Single asset"
+                ],
+                "default" : "Single datapoint",
+                "displayName" : "Asset Naming Scheme",
+                "group" : "Basic",
+                "order" : "3"
+        },
+        "subscription" : {
+                "description" : "OPC UA Variables or Objects to observe for data changes",
+                "type" : "JSON",
+                "default" : "{ \"subscriptions\" : [  \"ns=3;i=1001\", \"ns=3;i=1002\" ] }",
+                "displayName" : "OPC UA Node Subscriptions",
+                "group" : "OPC UA Subscriptions",
+                "order" : "11"
+        },
+        "filterRegex" : {
+                "description" : "Regular expression for filtering OPC UA Objects or Variables by Browse Name",
+                "type" : "string",
+                "default" : "",
+                "displayName" : "Name Filter Regular Expression",
+                "group" : "OPC UA Subscriptions",
+                "order" : "12"
+        },
+        "filterScope" : {
+                "description" : "The type of object to apply the Browse Name filter",
+                "type" : "enumeration",
+                "options" : [
+                        "Object",
+                        "Variable",
+                        "Object and Variable"
+                ],
+                "default" : "Variable",
+                "displayName" : "Name Filter Scope",
+                "order" : "13",
+                "group" : "OPC UA Subscriptions"
+        },
+        "filterAction" : {
+                "description" : "For Browse Names that match the filter, Include or Exclude the Objects or Variables",
+                "type" : "enumeration",
+                "options" : [
+                        "Include",
+                        "Exclude"
+                ],
+                "default" : "Exclude",
+                "displayName" : "Name Filter Action",
+                "order" : "14",
+                "group" : "OPC UA Subscriptions"
+        },
+        "parentPathMetadata" : {
+                "description" : "Include full OPC UA path as a Datapoint in a Fledge Reading",
+                "type" : "boolean",
+                "default" : "false",
+                "displayName" : "Include Full OPC UA Path as meta data",
+                "group" : "OPC UA Advanced",
+                "order" : "21"
+        },
+        "parentPath" : {
+                "description" : "Name for Full OPC UA Path meta data, if enabled",
+                "type" : "string",
+                "default" : "OPCUAPath",
+                "displayName" : "Full OPC UA Path meta data name",
+                "group" : "OPC UA Advanced",
+                "order" : "22",
+                "validity" : " parentPathMetadata == \"true\" "
+        },
+        "traceFile" : {
+                "description" : "Enable trace file for debugging",
+                "type" : "boolean",
+                "default" : "false",
+                "displayName" : "Debug Trace File",
+                "group" : "OPC UA Advanced",
+                "order" : "23"
+        },
+        "miBlockSize" : {
+                "description" : "The number of MonitoredItems to be registered with the OPC UA server in single call to the S2OPC Toolkit",
+                "type" : "integer",
+                "default" : "100",
+                "minimum" : "1",
+                "displayName" : "MonitoredItem block size",
+                "group" : "OPC UA Advanced",
+                "order" : "24"
+        },
+        "reportingInterval" : {
+                "description" : "The minimum reporting interval for data change notifications, in miliseconds",
+                "type" : "integer",
+                "default" : "0",
+                "minimum" : "0",
+                "displayName" : "Minimum Reporting Interval",
+                "group" : "OPC UA Advanced",
+                "order" : "25"
+        },
+        "dcfEnabled" : {
+                "description" : "Enable OPC UA Data Change Filter",
+                "type" : "boolean",
+                "default" : "false",
+                "displayName" : "Enable Data Change Filter",
+                "order" : "26",
+                "group" : "OPC UA Advanced"
+        },
+        "dcfTriggerType" : {
+                "description" : "Type of data change that should cause a notification to be reported by the OPC UA server",
+                "type" : "enumeration",
+                "options" : [
+                        "Status",
+                        "Status + Value",
+                        "Status + Value + Timestamp"
+                ],
+                "default" : "Status + Value",
+                "displayName" : "Data Change Filter Trigger Type",
+                "order" : "27",
+                "validity" : " dcfEnabled == \"true\" ",
+                "group" : "OPC UA Advanced"
+        },
+        "dcfDeadbandType" : {
+                "description" : "Behavior of the Data Change Filter Deadband Value. If None, there is no deadband evaluation.",
+                "type" : "enumeration",
+                "options" : [
+                        "None",
+                        "Absolute",
+                        "Percent"
+                ],
+                "default" : "None",
+                "displayName" : "Data Change Filter Deadband Type",
+                "order" : "28",
+                "validity" : " dcfEnabled == \"true\" ",
+                "group" : "OPC UA Advanced"
+        },
+        "dcfDeadbandValue" : {
+                "description" : "Evaluated only if the Data Change Filter Deadband Type is 'Absolute' or 'Percent'",
+                "type" : "float",
+                "default" : "0",
+                "minimum" : "0",
+                "displayName" : "Data Change Filter Deadband Value",
+                "order" : "29",
+                "validity" : " dcfEnabled == \"true\" ",
+                "group" : "OPC UA Advanced"
+        },
+        "securityMode" : {
+                "description" : "Security Mode to use while connecting to OPC UA server",
+                "type" : "enumeration",
+                "options" : [
+                        "None",
+                        "Sign",
+                        "SignAndEncrypt"
+                ],
+                "default" : "None",
+                "displayName" : "Security Mode",
+                "group" : "OPC UA Security",
+                "order" : "31"
+        },
+        "securityPolicy" : {
+                "description" : "Security Policy to use while connecting to OPC UA server",
+                "type" : "enumeration",
+                "options" : [
+                        "None",
+                        "Basic256",
+                        "Basic256Sha256"
+                ],
+                "default" : "None",
+                "displayName" : "Security Policy",
+                "order" : "32",
+                "group" : "OPC UA Security",
+                "validity" : " securityMode == \"Sign\" || securityMode == \"SignAndEncrypt\" "
+        },
+        "userAuthPolicy" : {
+                "description" : "User authentication policy to use while connecting to OPC UA server",
+                "type" : "enumeration",
+                "options" : [
+                        "anonymous",
+                        "username"
+                ],
+                "default" : "anonymous",
+                "displayName" : "User Authentication Policy",
+                "group" : "OPC UA Security",
+                "order" : "33"
+        },
+        "username" : {
+                "description" : "Username",
+                "type" : "string",
+                "default" : "",
+                "displayName" : "Username",
+                "order" : "34",
+                "group" : "OPC UA Security",
+                "validity" : " userAuthPolicy == \"username\" "
+        },
+        "password" : {
+                "description" : "Password",
+                "type" : "password",
+                "default" : "",
+                "displayName" : "Password",
+                "order" : "35",
+                "group" : "OPC UA Security",
+                "validity" : " userAuthPolicy == \"username\" "
+        },
+        "caCert" : {
+                "description" : "Certificate Authority file in DER format",
+                "type" : "string",
+                "default" : "",
+                "displayName" : "CA Certificate Authority",
+                "order" : "36",
+                "group" : "OPC UA Security",
+                "validity" : " securityMode == \"Sign\" || securityMode == \"SignAndEncrypt\" "
+        },
+        "serverCert" : {
+                "description" : "Server certificate file in DER format",
+                "type" : "string",
+                "default" : "",
+                "displayName" : "Server Public Certificate",
+                "order" : "37",
+                "group" : "OPC UA Security",
+                "validity" : " securityMode == \"Sign\" || securityMode == \"SignAndEncrypt\" "
+        },
+        "clientCert" : {
+                "description" : "Client certificate file in DER format",
+                "type" : "string",
+                "default" : "",
+                "displayName" : "Client Public Certificate",
+                "order" : "38",
+                "group" : "OPC UA Security",
+                "validity" : " securityMode == \"Sign\" || securityMode == \"SignAndEncrypt\" "
+        },
+        "clientKey" : {
+                "description" : "Client private key file in PEM format",
+                "type" : "string",
+                "default" : "",
+                "displayName" : "Client Private Key",
+                "order" : "39",
+                "group" : "OPC UA Security",
+                "validity" : " securityMode == \"Sign\" || securityMode == \"SignAndEncrypt\" "
+        },
+        "caCrl" : {
+                "description" : "Certificate Revocation List file in DER format",
+                "type" : "string",
+                "default" : "",
+                "displayName" : "Certificate Revocation List",
+                "order" : "40",
+                "group" : "OPC UA Security",
+                "validity" : " securityMode == \"Sign\" || securityMode == \"SignAndEncrypt\" "
+        }
+});
 
 /**
  * The OPCUA plugin interface
@@ -262,6 +336,7 @@ PLUGIN_HANDLE plugin_init(ConfigCategory *config)
 {
     OPCUA *opcua = new OPCUA();
     opcua->parseConfig(*config);
+    opcua->setInstanceName(config->getName());
     return (PLUGIN_HANDLE)opcua;
 }
 
@@ -314,8 +389,8 @@ Reading plugin_poll(PLUGIN_HANDLE *handle)
  */
 void plugin_reconfigure(PLUGIN_HANDLE *handle, string &newConfig)
 {
-    ConfigCategory config("new", newConfig);
     OPCUA *opcua = (OPCUA *)*handle;
+    ConfigCategory config(opcua->getInstanceName(), newConfig);
     opcua->reconfigure(config);
 }
 

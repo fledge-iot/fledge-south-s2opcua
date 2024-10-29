@@ -67,7 +67,6 @@ include_directories(${FLEDGE_INCLUDE_DIRS})
 
 include_directories(/usr/local/include/s2opc/common)
 include_directories(/usr/local/include/s2opc/clientserver)
-include_directories(/usr/local/include/s2opc/clientserver/frontend)
 
 # Add Fledge lib path
 link_directories(${FLEDGE_LIB_DIRS})
@@ -102,25 +101,9 @@ if (NOT S2OPC_CLIENTSERVER)
         return()
 endif()
 
-find_library(S2OPC_CLIENTWRAPPER s2opc_clientwrapper ${OPCUADIR}/build/lib)
-if (NOT S2OPC_CLIENTWRAPPER)
-        message(FATAL_ERROR "S2OPC library s2opc_clientwrapper not found.\n"
-                        "Please build S2OPC library and set the environment variable S2OPC to library source tree root")
-        return()
-endif()
-
-find_library(S2OPC_COMMONWRAPPER s2opc_commonwrapper ${OPCUADIR}/build/lib)
-if (NOT S2OPC_COMMONWRAPPER)
-        message(FATAL_ERROR "S2OPC library s2opc_commonwrapper not found.\n"
-                        "Please build S2OPC library and set the environment variable S2OPC to library source tree root")
-        return()
-endif()
-
 message("S2OPC_COMMON: ${S2OPC_COMMON}")
 message("S2OPC_CLIENTSERVER: ${S2OPC_CLIENTSERVER}")
-message("S2OPC_CLIENTWRAPPER: ${S2OPC_CLIENTWRAPPER}")
-message("S2OPC_COMMONWRAPPER: ${S2OPC_COMMONWRAPPER}")
-target_link_libraries(${PROJECT_NAME} ${S2OPC_COMMON} ${S2OPC_CLIENTSERVER} ${S2OPC_CLIENTWRAPPER} ${S2OPC_COMMONWRAPPER})
+target_link_libraries(${PROJECT_NAME} ${S2OPC_COMMON} ${S2OPC_CLIENTSERVER})
 
 target_compile_options(${PROJECT_NAME} PRIVATE ${S2OPC_COMPILER_FLAGS})
 target_compile_definitions(${PROJECT_NAME} PRIVATE ${S2OPC_DEFINITIONS})

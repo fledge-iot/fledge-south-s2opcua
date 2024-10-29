@@ -28,11 +28,22 @@ if [[  $os_name == *"Red Hat"* || $os_name == *"CentOS"* ]]; then
 	echo RHEL/CentOS not currently supported by this plugin
 	exit 1
 else
-	sudo apt-get install -y libmbedtls-dev
+	(
+		wget https://github.com/Mbed-TLS/mbedtls/archive/v2.28.7.tar.gz
+		tar xzvf v2.28.7.tar.gz
+		cd mbedtls-2.28.7
+		mkdir build
+		cd build
+		cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_POSITION_INDEPENDENT_CODE=ON -DUSE_SHARED_MBEDTLS_LIBRARY=OFF ..
+		make
+		sudo make install
+	)
 fi
 
 # libexpat:
-git clone https://github.com/libexpat/libexpat.git
+libexpat_version="2.6.0"
+libexpat_branch="R_${libexpat_version//./_}"
+git clone https://github.com/libexpat/libexpat.git --branch ${libexpat_branch} --depth 1
 (
 	cd libexpat/expat
 	./buildconf.sh && \
@@ -40,6 +51,7 @@ git clone https://github.com/libexpat/libexpat.git
 	make && \
 	sudo make install
 )
+
 
 # libcheck:
 wget https://github.com/libcheck/check/releases/download/0.15.2/check-0.15.2.tar.gz
@@ -55,17 +67,14 @@ tar xf check-0.15.2.tar.gz
 )
 
 # S2OPC
-git clone https://gitlab.com/systerel/S2OPC.git --branch S2OPC_Toolkit_1.4.1 --depth 1
+git clone https://gitlab.com/systerel/S2OPC.git --branch S2OPC_Toolkit_1.5.0 --depth 1
 (
 	cd S2OPC
-	cp ../S2OPC.patch .
-	git apply S2OPC.patch
-	BUILD_SHARED_LIBS=OFF
-	CMAKE_INSTALL_PREFIX=/usr/local
-	./build.sh
+	BUILD_SHARED_LIBS=1 CMAKE_INSTALL_PREFIX=/usr/local ./build.sh
 	echo
 	echo "BUILD done, INSTALLING..."
 	echo
 	cd build
 	sudo make install
+	sudo cp ../src/ClientServer/frontend/client_wrapper/libs2opc_client_config_custom.h /usr/local/include/s2opc/clientserver
 )
