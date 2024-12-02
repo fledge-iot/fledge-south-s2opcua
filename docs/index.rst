@@ -145,7 +145,7 @@ The OPC UA Advanced tab allows advanced configuration parameters to be set:
     The path always begins with a forward slash.
     The path does not include the *Objects* folder or the subscribed Node.
   - **Full OPC UA Path meta data name**: The data point name to use when adding the full OPC UA path to every reading. Default is *OPCUAPath*.
-  - **Debug Trace File**: Enable the S2OPCUA OPCUA Toolkit trace file for debugging. If enabled, log files will appear in the directory */usr/local/fledge/data/logs*.
+  - **Debug Trace File**: Enable the S2OPCUA OPCUA Toolkit trace file for debugging. If enabled, log files will appear in the directory */usr/local/fledge/data/logs/debug-trace*.
   - **MonitoredItem block size**: The number of items passed in single call to the S2OPCUA OPCUA Toolkit when requesting to monitor data change events in the OPC UA server. The default value will work in most of the cases. If the error **Failed to add Monitored Items** is written to the logs then try reducing the number of items sent in each call until this error stops occurring. Reducing the number too far will impact the performance, increasing the time it takes to setup the connection with the server and get the first data back from the server. Using very large values for this call will put extra stress on the OPC UA server and also increase the memory footprint of the plugin. The minimum value of this is 1, the default is 100.
   - **Minimum Reporting Interval**: This control the minimum interval between reports of data changes in subscriptions. It sets an upper limit to the rate that data will be ingested into the plugin and is expressed in milliseconds.
   - **Enable Data Change Filter**: Enable Data Change Filtering in the OPC UA server.
