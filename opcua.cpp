@@ -1040,7 +1040,7 @@ void OPCUA::setTraceFile(const std::string &traceFile)
 {
 	if (traceFile == "True" || traceFile == "true" || traceFile == "TRUE")
 	{
-		string traceFilePath = getDataDir() + string("/logs/");
+		string traceFilePath = getDataDir() + string("/logs/debug-trace/");
 		size_t len = traceFilePath.length();
 		m_traceFile = (char *)malloc(1 + len);
 		strncpy(m_traceFile, traceFilePath.c_str(), len);
