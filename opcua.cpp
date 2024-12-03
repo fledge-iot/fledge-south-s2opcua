@@ -2864,20 +2864,35 @@ void OPCUA::resolveDuplicateBrowseNames()
 	{
 		return;
 	}
-	for (auto it = m_nodes.begin(); it != m_nodes.end(); ++it)
+
+	// Create a temporary map of Browse Name to a set of pointers to OPCUA::Nodes that have that Name
+	std::map<std::string, std::set<OPCUA::Node *>> browseNameMap;
+
+	// Load the browseNameMap with the Browse Names and OPCUA::Node pointers in the 'm_nodes' master list
+	for (auto node : m_nodes)
 	{
-		string b1 = it->second->getBrowseName();
-		auto it2 = ++it;
-		it--;
-		while (it2 != m_nodes.end())
+		try
 		{
-			string b2 = it2->second->getBrowseName();
-			if (b1.compare(b2) == 0)
+			browseNameMap.at(node.second->getBrowseName()).insert(node.second);
+		}
+		catch (const std::out_of_range &e)
+		{
+			std::set<OPCUA::Node *> newSet;
+			newSet.insert(node.second);
+			browseNameMap.emplace(std::pair<std::string, std::set<OPCUA::Node *>>(node.second->getBrowseName(), newSet));
+		}
+	}
+
+	// If a Browse Name is exposed by more than one OPCUA::Node,
+	// apply the Browse Name disambiguation to all of the OPCUA::Node instances
+	for (auto browseNameMapItem : browseNameMap)
+	{
+		if (browseNameMapItem.second.size() > 1)
+		{
+			for (OPCUA::Node *opcuaNode : browseNameMapItem.second)
 			{
-				it->second->duplicateBrowseName();
-				it2->second->duplicateBrowseName();
+				opcuaNode->duplicateBrowseName();
 			}
-			it2++;
 		}
 	}
 }
