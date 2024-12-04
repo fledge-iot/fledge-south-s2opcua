@@ -66,6 +66,18 @@ static const char *default_config = QUOTE({
                 "group" : "Basic",
                 "order" : "3"
         },
+        "datapointName" : {
+                "description" : "The OPC UA Variable property to use as the Datapoint name",
+                "type" : "enumeration",
+                "options" : [
+                        "Browse Name",
+                        "Node Id"
+                ],
+                "default" : "Browse Name",
+                "displayName" : "Datapoint Name",
+                "group" : "Basic",
+                "order" : "4"
+        },
         "subscription" : {
                 "description" : "OPC UA Variables or Objects to observe for data changes",
                 "type" : "JSON",

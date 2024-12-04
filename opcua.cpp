@@ -517,11 +517,16 @@ void OPCUA::dataChange(const char *nodeId, const SOPC_DataValue *value)
 			Logger::getLogger()->debug("DataChange: %s,%s,%s", DateTimeToString(value->SourceTimestamp).c_str(), dpv->toString().c_str(), nodeId);
 			vector<Datapoint *> points;
 			string dpname = nodeId;
-			auto res = m_nodes.find(nodeId);
-			if (res != m_nodes.end())
+
+			if (!m_dpNameIsNodeId)
 			{
-				dpname = res->second->getBrowseName();
+				auto res = m_nodes.find(nodeId);
+				if (res != m_nodes.end())
+				{
+					dpname = res->second->getBrowseName();
+				}
 			}
+
 			// Strip " from datapoint name
 			size_t pos;
 			while ((pos = dpname.find_first_of("\"")) != std::string::npos)
@@ -600,6 +605,7 @@ OPCUA::OPCUA() : m_publishPeriod(1000),
 				 m_connection(NULL),
 				 m_subscription(NULL),
 				 m_assetNaming(ASSET_NAME_SINGLE),
+				 m_dpNameIsNodeId(false),
 				 m_secMode(OpcUa_MessageSecurityMode_Invalid),
 				 m_dcfEnabled(false),
 				 m_dcfTriggerType(OpcUa_DataChangeTrigger_StatusValue),
@@ -645,6 +651,7 @@ void OPCUA::clearConfig()
 	m_metaDataName.clear();
 	m_includePathAsMetadata = false;
 	m_assetNaming = ASSET_NAME_SINGLE;
+	m_dpNameIsNodeId = false;
 	m_reportingInterval = 100;
 	m_publishPeriod = 1000;
 	m_maxKeepalive = 30;
@@ -743,6 +750,11 @@ void OPCUA::parseConfig(ConfigCategory &config)
 	if (config.itemExists("assetNaming"))
 	{
 		setAssetNaming(config.getValue("assetNaming"));
+	}
+
+	if (config.itemExists("datapointName"))
+	{
+		setDatapointNaming(config.getValue("datapointName"));
 	}
 
 	if (config.itemExists("reportingInterval"))
@@ -2853,14 +2865,15 @@ void OPCUA::setAssetNaming(const string &scheme)
 }
 
 /**
- * Resolve duplicate browse names within nodes, if the naming
+ * Resolve duplicate Browse Names within nodes, if the naming
  * scheme we are using includes the parent object name in the
  * naming we ignore duplicates as they are always going to have
- * different parent nodes.
+ * different parent nodes. There is no need to resolve Browse
+ * Names if Node Ids are to be used as Datapoint names.
  */
 void OPCUA::resolveDuplicateBrowseNames()
 {
-	if (m_assetNaming == ASSET_NAME_SINGLE_OBJ || m_assetNaming == ASSET_NAME_OBJECT)
+	if (m_assetNaming == ASSET_NAME_SINGLE_OBJ || m_assetNaming == ASSET_NAME_OBJECT || m_dpNameIsNodeId)
 	{
 		return;
 	}
