@@ -76,7 +76,7 @@ The following configuration parameters are available:
 
   - **Asset Naming Scheme**: The plugin can ingest data into a number of different assets based on the selection of the asset naming scheme.
     This list of options notes that either the Variable Browse Name or Node Id will be used in asset and datapoint naming.
-    The *Datapoint name* configuration on this tab allows you to choose which of these two properties to use:
+    The *Datapoint Name* configuration on this tab allows you to choose which of these two properties to use:
 
     +-----------+
     | |opcua_5| |
@@ -90,14 +90,14 @@ The following configuration parameters are available:
 
      - *Single asset*: A single asset will be created with all the Variables read from the OPC UA server as datapoints within that asset. The asset name will be taken from the *Asset Name* configuration item. The datapoint name will be the Browse Name or Node Id of the OPC UA Variable.
 
-  - **Datapoint name**: The OPC UA Variable property to use as the Datapoint name. Options are *Browse Name* (default) and *Node Id*.
+  - **Datapoint Name**: The OPC UA Variable property to use as the Datapoint name. Options are *Browse Name* (default) and *Node Id*.
 
 Handling Duplicate Browse Names
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Duplicate Browse Names are not an issue if the *Datapoint name* configuration is set to *Node Id* because Node Ids are always unique within the OPC UA Server's Address Space.
+Duplicate Browse Names are not an issue if the *Datapoint Name* configuration is set to *Node Id* because Node Ids are always unique within the OPC UA Server's Address Space.
 
-If the *Datapoint name* configuration is set to *Browse Name*, however, the plugin uses the Browse Names of the OPC UA Variables to name the datapoints within an asset.
+If the *Datapoint Name* configuration is set to *Browse Name*, however, the plugin uses the Browse Names of the OPC UA Variables to name the datapoints within an asset.
 There is no requirement that the Browse Names be unique.
 The plugin resolves this by detecting duplicate Browse Names.
 If duplicates are found, the Node Id is appended to each Browse Name to create a unique datapoint name.
