@@ -767,26 +767,12 @@ void OPCUA::parseConfig(ConfigCategory &config)
 	if (config.itemExists("subscription"))
 	{
 		// Now add the subscription data
-		string map = config.getValue("subscription");
-		rapidjson::Document doc;
-		doc.Parse(map.c_str());
-		if (!doc.HasParseError())
+		clearSubscription();
+		m_subscriptions = config.getValueList("subscription");
+
+		for (int i = 0; i < m_subscriptions.size(); i++)
 		{
-			clearSubscription();
-			if (doc.HasMember("subscriptions") && doc["subscriptions"].IsArray())
-			{
-				const rapidjson::Value &subs = doc["subscriptions"];
-				for (rapidjson::SizeType i = 0; i < subs.Size(); i++)
-				{
-					Logger::getLogger()->info("Adding subscription for NodeId %d = '%s'", i, subs[i].GetString());
-					addSubscription(subs[i].GetString());
-				}
-			}
-			else
-			{
-				Logger::getLogger()->fatal("OPC UA plugin is missing a subscriptions array");
-				throw exception();
-			}
+			Logger::getLogger()->info("Added subscription for NodeId %d = '%s'", i, m_subscriptions[i].c_str());
 		}
 	}
 
