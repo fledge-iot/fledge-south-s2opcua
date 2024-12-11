@@ -18,6 +18,8 @@
 #include <math.h>
 #include <regex>
 #include <file_utils.h>
+#include <sys/stat.h>
+#include <sys/types.h>
 
 using namespace std;
 
@@ -1040,6 +1042,11 @@ void OPCUA::setTraceFile(const std::string &traceFile)
 {
 	if (traceFile == "True" || traceFile == "true" || traceFile == "TRUE")
 	{
+		string logDirectory = getDataDir() + string("/logs");
+		if (access(logDirectory.c_str(), W_OK))
+		{
+			mkdir(logDirectory.c_str(), 0777);
+		}
 		string traceFilePath = getDataDir() + string("/logs/debug-trace/");
 		size_t len = traceFilePath.length();
 		m_traceFile = (char *)malloc(1 + len);
