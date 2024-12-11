@@ -74,33 +74,40 @@ The following configuration parameters are available:
 
   - **OPC UA Server URL**: This is the URL of the OPC UA server from which data will be extracted. The URL should be of the form *opc.tcp://..../*
 
-  - **Asset Naming Scheme**: The plugin can ingest data into a number of different assets based on the selection of the asset naming scheme:
+  - **Asset Naming Scheme**: The plugin can ingest data into a number of different assets based on the selection of the asset naming scheme.
+    This list of options notes that either the Variable Browse Name or Node Id will be used in asset and datapoint naming.
+    The *Datapoint Name* configuration on this tab allows you to choose which of these two properties to use:
 
     +-----------+
     | |opcua_5| |
     +-----------+
 
-     - *Single datapoint*: An asset will be created for each Variable read from the OPC UA server. The asset will contain a single datapoint whose name will be taken from the Browse Name of the Variable read. The asset name will be created by appending the Browse Name of the Variable to the fixed asset name prefix defined in the *Asset Name* configuration option above.
+     - *Single datapoint*: An asset will be created for each Variable read from the OPC UA server. The asset will contain a single datapoint whose name will be taken from the Browse Name or Node Id of the Variable read. The asset name will be created by appending the Browse Name or Node Id of the Variable to the fixed asset name prefix defined in the *Asset Name* configuration option above.
 
-     - *Single datapoint object prefix*: An asset will be created for each Variable read from the OPC UA server. The asset will contain a single datapoint whose name will be taken from the Browse Name of the Variable read. The asset name will be created by appending the Browse Name of the Variable to the Browse Name of the Variable's parent Object.
+     - *Single datapoint object prefix*: An asset will be created for each Variable read from the OPC UA server. The asset will contain a single datapoint whose name will be taken from the Browse Name or Node Id of the Variable read. The asset name will be created by appending the Browse Name or Node Id of the Variable to the Browse Name of the Variable's parent Object.
 
-     - *Asset per object*: An asset will be created for each OPC UA Object that is subscribed to. That asset will be named using the Browse Name of the parent of the OPC UA Object and will contain a datapoint per Variable within the OPC UA Object. The name of the datapoint will be the Browse Name of the Variable.
+     - *Asset per object*: An asset will be created for each OPC UA Object that is subscribed to. The asset will be named using the Browse Name of the parent of the OPC UA Object and will contain a datapoint per Variable within the OPC UA Object. The name of the datapoint will be the Browse Name or Node Id of the Variable.
 
-     - *Single asset*: A single asset will be created with all the Variables read from the OPC UA server as datapoints within that asset. The asset name will be taken from the *Asset Name* configuration item and the datapoint name from the Browse Name of the OPC UA Variable.
+     - *Single asset*: A single asset will be created with all the Variables read from the OPC UA server as datapoints within that asset. The asset name will be taken from the *Asset Name* configuration item. The datapoint name will be the Browse Name or Node Id of the OPC UA Variable.
+
+  - **Datapoint Name**: The OPC UA Variable property to use as the Datapoint name. Options are *Browse Name* (default) and *Node Id*.
 
 Handling Duplicate Browse Names
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-The plugin uses the Browse Names of the OPC UA Variables to name the datapoints with an asset.
-There is no requirement that the Browse Names be unique, however.
+Duplicate Browse Names are not an issue if the *Datapoint Name* configuration is set to *Node Id* because Node Ids are always unique within the OPC UA Server's Address Space.
+
+If the *Datapoint Name* configuration is set to *Browse Name*, however, the plugin uses the Browse Names of the OPC UA Variables to name the datapoints within an asset.
+There is no requirement that the Browse Names be unique.
 The plugin resolves this by detecting duplicate Browse Names.
-If one is found, the NodeId is appended to the Browse Name to create a unique datapoint name.
+If duplicates are found, the Node Id is appended to each Browse Name to create a unique datapoint name.
 
 This is important for both *Single datapoint* and *Single Asset* naming schemes:
 
-  - In the case of the *Single datapoint*, the asset name is the same as the datapoint name and is global for all OPC UA Variables that are monitored.
-    The result of this that the same asset name and datapoint name would be used to store multiple OPC UA Variables.
-  - In the case of *Single Asset*, datapoints names are kept within a single asset; an error would occur if two datapoints had the same name.
+  - In the case of the *Single datapoint*, the asset name is the fixed asset name prefix appended by the OPC UA Variable Browse Name.
+    Since identical Browse Names may appear in many OPC UA Subscriptions, the asset name prefix/Browse Name combination may not be unique.
+  - In the case of *Single Asset*, all datapoints are kept within a single asset.
+    Since identical Browse Names may appear in many OPC UA Subscriptions, the Browse Name may not be unique.
 
 .. _OPC UA Subscriptions:
 

@@ -88,6 +88,7 @@ class OPCUA
         void        setRevocationList(const std::string& cert) { m_caCrl = cert; }
         void        setTraceFile(const std::string& traceFile);
         void        setAssetNaming(const std::string& scheme);
+		void		setDatapointNaming(const std::string &nameType) { m_dpNameIsNodeId = (nameType.compare("Node Id") == 0) ? true : false; };
 		bool		readyForData() {return (!m_stopped.load() && m_readyForData.load());}
 		void		incrementNothingToDo() {m_numOpcUaNothingToDo++;}
         std::string	&getUsername() { return m_username; }
@@ -196,6 +197,7 @@ class OPCUA
 	enum {
 		ASSET_NAME_SINGLE, ASSET_NAME_SINGLE_OBJ, ASSET_NAME_OBJECT, ASSET_NAME
 				} m_assetNaming;
+	bool m_dpNameIsNodeId;
 	std::set<Node *> m_nodeObjects;
     std::map<std::string, std::string>
 				m_parents;	// Map variable node id to parent node id
