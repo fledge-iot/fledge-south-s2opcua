@@ -69,6 +69,7 @@ static const char *default_config = QUOTE({
         "subscription" : {
                 "description" : "OPC UA Variables or Objects to observe for data changes",
                 "type" : "list",
+				"listName" : "subscriptions",
                 "items" : "string",
                 "default" : "[\"ns=3;i=1001\", \"ns=3;i=1002\"]",
                 "displayName" : "OPC UA Node Subscriptions",
