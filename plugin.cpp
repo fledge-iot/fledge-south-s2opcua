@@ -309,6 +309,15 @@ static const char *default_config = QUOTE({
                 "order" : "40",
                 "group" : "OPC UA Security",
                 "validity" : " securityMode == \"Sign\" || securityMode == \"SignAndEncrypt\" "
+        },
+        "controlList" : {
+            "description" : "This specifies the permitted node IDs of OPC UA Variables that the plugin is authorized to write to.",
+            "type" : "list",
+            "items" : "string",
+            "default" : "[]",
+            "displayName" : "Control List",
+            "order" : "41",
+            "group" : "control"
         }
 });
 
@@ -321,12 +330,12 @@ extern "C" {
  * The plugin information structure
  */
 static PLUGIN_INFORMATION info = {
-    PLUGIN_NAME,              // Name
-    VERSION,                  // Version
-    SP_ASYNC,           // Flags
-    PLUGIN_TYPE_SOUTH,        // Type
-    "1.0.0",                  // Interface version
-    default_config          // Default configuration
+    PLUGIN_NAME,           // Name
+    VERSION,               // Version
+    SP_ASYNC | SP_CONTROL, // Flags
+    PLUGIN_TYPE_SOUTH,     // Type
+    "1.0.0",               // Interface version
+    default_config         // Default configuration
 };
 
 /**
@@ -404,6 +413,27 @@ void plugin_reconfigure(PLUGIN_HANDLE *handle, string &newConfig)
     OPCUA *opcua = (OPCUA *)*handle;
     ConfigCategory config(opcua->getInstanceName(), newConfig);
     opcua->reconfigure(config);
+}
+
+/**
+ * Setpoint control write operation
+ */
+bool plugin_write(PLUGIN_HANDLE *handle, string name, string value)
+{
+    OPCUA *opcua = (OPCUA *)handle;
+
+    if (!opcua)
+        return false;
+    return opcua->write(name, value);
+}
+
+/**
+ * Setpoint control operation. None are supported by s2opcua
+ */
+bool plugin_operation(PLUGIN_HANDLE *handle, string operation, int parameterCount, PLUGIN_PARAMETER parameters[])
+{
+    Logger::getLogger()->warn("OPC UA do not support Setpoint control operation");
+    return false;
 }
 
 /**

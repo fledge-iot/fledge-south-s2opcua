@@ -59,7 +59,7 @@ static bool UsernamePasswordCallback(char** outUsername, char** outPassword)
 		Logger::getLogger()->debug("UsernamePasswordCallback: username '%s'", username.c_str());
 	}
 
-    return true;
+	return true;
 }
 
 /**
@@ -715,14 +715,14 @@ void OPCUA::clearData()
  */
 bool OPCUA::isRegexValid(const std::string &regexp)
 {
-    try {
-        regex re(regexp);
-    }
-    catch (const std::regex_error& ex) {
+	try {
+		regex re(regexp);
+	}
+	catch (const std::regex_error& ex) {
 		Logger::getLogger()->error("RegEx parse error: %s", ex.what());
-        return false;
-    }
-    return true;
+		return false;
+	}
+	return true;
 }
 
 /**
@@ -954,6 +954,39 @@ void OPCUA::parseConfig(ConfigCategory &config)
 	if (config.itemExists("dcfDeadbandValue"))
 	{
 		m_dcfDeadbandValue = std::stod(config.getValue("dcfDeadbandValue"));
+	}
+
+	/**
+	 * Updates the allowed control nodes list from the configuration.
+	 *
+	 * Clears the current allowed control nodes, retrieves the node list from the configuration,
+	 * and logs the updated allowed control nodes.
+	 */
+	if (config.itemExists("controlList"))
+	{
+		// Clear the current list of allowed control nodes
+		m_allowedControlNodes.clear();
+
+		// Retrieve the control list from the configuration
+		auto controlList = config.getValueList("controlList");
+
+		std::ostringstream allowedControlNodesStream;
+
+		for (const auto &nodeId : controlList)
+		{
+			m_allowedControlNodes.insert(nodeId);
+			allowedControlNodesStream << nodeId << ", ";
+		}
+
+		std::string allowedControlNodesStr = allowedControlNodesStream.str();
+
+		// Remove the trailing ", " if the string is not empty
+		if (!allowedControlNodesStr.empty())
+		{
+			allowedControlNodesStr.erase(allowedControlNodesStr.size() - 2);
+		}
+
+		Logger::getLogger()->info("Allowed control nodes are: '%s'.", allowedControlNodesStr.c_str());
 	}
 }
 
@@ -1377,6 +1410,66 @@ int OPCUA::subscribe()
 }
 
 /**
+ * Asynchronous service response callback.
+ *
+ * Handles responses from asynchronous S2OPC services, specifically the WriteResponse in this case.
+ *
+ * @param encType     The type of the encodeable message received.
+ * @param response    A pointer to the response data.
+ * @param appContext  The application context passed to the asynchronous request.
+ */
+void OPCUA::asyncS2ResponseCallBack(SOPC_EncodeableType *encType, const void *response, uintptr_t appContext)
+{
+	// Check if the response is a WriteResponse
+	if (encType == &OpcUa_WriteResponse_EncodeableType)
+	{
+		// Cast the response to the appropriate type
+		const OpcUa_WriteResponse *writeResponse = (const OpcUa_WriteResponse *)response;
+
+		// Check the overall service result status
+		if (SOPC_IsGoodStatus(writeResponse->ResponseHeader.ServiceResult))
+		{
+			// Ensure there is exactly one result and check its status
+			if (writeResponse->NoOfResults == 1)
+			{
+				if (SOPC_IsGoodStatus(writeResponse->Results[0]))
+				{
+					Logger::getLogger()->info("Write operation succeeded.");
+				}
+				else
+				{
+					Logger::getLogger()->error(
+						"Write operation failed with result status: 0x%08" PRIX32, writeResponse->Results[0]);
+				}
+			}
+			else
+			{
+				Logger::getLogger()->error(
+					"Unexpected number of results in WriteResponse: %d", writeResponse->NoOfResults);
+			}
+		}
+		else
+		{
+			Logger::getLogger()->error(
+				"Write service failed with service result status: 0x%08" PRIX32,
+				writeResponse->ResponseHeader.ServiceResult);
+		}
+	}
+	else if (encType == &OpcUa_ServiceFault_EncodeableType)
+	{
+		// Cast the response to the appropriate type
+		const OpcUa_ServiceFault *serviceFault = (const OpcUa_ServiceFault *)response;
+
+		Logger::getLogger()->error("Service fault received with status: 0x%08" PRIX32, serviceFault->ResponseHeader.ServiceResult);
+	}
+	else
+	{
+		// Log and ignore other response types that are not handled by this callback
+		Logger::getLogger()->debug("Unhandled response type received in asyncS2ResponseCallBack.");
+	}
+}
+
+/**
  * Initialise the S2OPC Toolkit
  *
  * @param traceFilePath	Full path of the trace file. If NULL, do not create a trace file.
@@ -1416,6 +1509,12 @@ SOPC_ReturnStatus OPCUA::initializeS2sdk(const char *traceFilePath)
 		{
 			Logger::getLogger()->fatal("Unable to initialise S2OPC ClientHelper library");
 			throw runtime_error("Unable to initialise S2OPC ClientHelper library");
+		}
+
+		// Set asynchronous response callback
+		if (initStatus == SOPC_STATUS_OK)
+		{
+			initStatus = SOPC_ClientConfigHelper_SetServiceAsyncResponse(asyncS2ResponseCallBack);
 		}
 
 		Logger::getLogger()->debug("S2OPC Toolkit initialised");
@@ -1501,6 +1600,253 @@ SOPC_ReturnStatus OPCUA::createS2Subscription()
 	}
 
 	return status;
+}
+
+/**
+ * Converts a string value to a SOPC_DataValue object based on the specified BuiltinId.
+ *
+ * @param builtinId  The OPC UA BuiltinId that determines the data type of the value.
+ * @param val        A string representation of the value to be converted.
+ * @return           Pointer to a SOPC_DataValue object on success, NULL on failure.
+ */
+SOPC_DataValue *OPCUA::toDataValue(SOPC_BuiltinId builtinId, const char *val)
+{
+	// Allocate and initialize the SOPC_DataValue structure
+	SOPC_DataValue *dv = (SOPC_DataValue *)SOPC_Calloc(1, sizeof(*dv));
+	if (dv == NULL)
+	{
+		Logger::getLogger()->error("Memory allocation failed for SOPC_DataValue.");
+		return NULL;
+	}
+	SOPC_DataValue_Initialize(dv);
+
+	dv->Value.BuiltInTypeId = builtinId;
+	dv->Value.ArrayType = SOPC_VariantArrayType_SingleValue;
+
+	int scanRes = 0;     // Holds the result of sscanf operations
+	int i8 = 0;          // Temporary variable for signed 8-bit integer
+	unsigned int u8 = 0; // Temporary variable for unsigned 8-bit integer
+
+	// Parse the value based on the specified BuiltinId
+	switch (builtinId)
+	{
+	case SOPC_Boolean_Id:
+	case SOPC_Byte_Id:
+		scanRes = sscanf(val, "%u", &u8);
+		if (scanRes != 0 && u8 <= UINT8_MAX)
+		{
+			if (builtinId == SOPC_Byte_Id)
+			{
+				dv->Value.Value.Byte = (SOPC_Byte)u8;
+			}
+			else
+			{
+				dv->Value.Value.Boolean = (SOPC_Boolean)u8;
+			}
+		}
+		else
+		{
+			scanRes = 0;
+		}
+		break;
+	case SOPC_SByte_Id:
+		scanRes = sscanf(val, "%d", &i8);
+		if (scanRes != 0 && i8 <= INT8_MAX && i8 >= INT8_MIN)
+		{
+			dv->Value.Value.Sbyte = (SOPC_SByte)i8;
+		}
+		else
+		{
+			scanRes = 0;
+		}
+		break;
+	case SOPC_Int16_Id:
+		scanRes = sscanf(val, "%" SCNi16, &dv->Value.Value.Int16);
+		break;
+	case SOPC_UInt16_Id:
+		scanRes = sscanf(val, "%" SCNu16, &dv->Value.Value.Uint16);
+		break;
+	case SOPC_Int32_Id:
+		scanRes = sscanf(val, "%" SCNi32, &dv->Value.Value.Int32);
+		break;
+	case SOPC_UInt32_Id:
+		scanRes = sscanf(val, "%" SCNu32, &dv->Value.Value.Uint32);
+		break;
+	case SOPC_Int64_Id:
+		scanRes = sscanf(val, "%" SCNi64, &dv->Value.Value.Int64);
+		break;
+	case SOPC_UInt64_Id:
+		scanRes = sscanf(val, "%" SCNu64, &dv->Value.Value.Uint64);
+		break;
+	case SOPC_Float_Id:
+		scanRes = sscanf(val, "%f", &dv->Value.Value.Floatv);
+		break;
+	case SOPC_Double_Id:
+		scanRes = sscanf(val, "%lf", &dv->Value.Value.Doublev);
+		break;
+	case SOPC_String_Id:
+		SOPC_String_Initialize(&dv->Value.Value.String);
+		if (SOPC_STATUS_OK == SOPC_String_CopyFromCString(&dv->Value.Value.String, val))
+		{
+			scanRes = 1;
+		}
+		break;
+	default:
+		Logger::getLogger()->error("Unsupported BuiltinId: %d", builtinId);
+		scanRes = 0;
+		break;
+	}
+
+	// Set the source timestamp for the value
+	dv->SourceTimestamp = SOPC_Time_GetCurrentTimeUTC();
+
+	// If parsing failed, clear and free the allocated memory
+	if (scanRes == 0)
+	{
+		Logger::getLogger()->error("Failed to parse value '%s' for BuiltinId: %d", val, builtinId);
+		SOPC_DataValue_Clear(dv);
+		SOPC_Free(dv);
+		return NULL;
+	}
+
+	return dv;
+}
+
+/**
+ * Reads the value of a given node and retrieves its BuiltinId and ArrayType.
+ *
+ * @param nodeIdStr          The node ID string of the node to read.
+ * @param outBuiltinTypeId   Pointer to store the BuiltinId of the node's value.
+ * @param outArrayType       Pointer to store the ArrayType of the node's value.
+ * @return                   True if the read operation is successful, false otherwise.
+ */
+bool OPCUA::read(const char *nodeIdStr, SOPC_BuiltinId *outBuiltinTypeId, SOPC_VariantArrayType *outArrayType)
+{
+	if (nodeIdStr == NULL || outBuiltinTypeId == NULL || outArrayType == NULL)
+	{
+		Logger::getLogger()->error("Invalid input parameters for read operation.");
+		return false;
+	}
+
+	SOPC_ReturnStatus status = SOPC_STATUS_NOK;
+	OpcUa_ReadRequest *readRequest = SOPC_ReadRequest_Create(1, OpcUa_TimestampsToReturn_Both);
+	OpcUa_ReadResponse *readResponse = NULL;
+
+	if (readRequest == NULL)
+	{
+		Logger::getLogger()->error("Failed to create ReadRequest.");
+		return false;
+	}
+
+	status = SOPC_ReadRequest_SetReadValueFromStrings(readRequest, 0, nodeIdStr, SOPC_AttributeId_Value, NULL);
+	if (status != SOPC_STATUS_OK)
+	{
+		Logger::getLogger()->error("Failed to set read value for node %s.", nodeIdStr);
+		SOPC_Encodeable_Delete(readRequest->encodeableType, (void **)&readRequest);
+		return false;
+	}
+
+	status = SOPC_ClientHelperNew_ServiceSync(m_connection, readRequest, (void **)&readResponse);
+	SOPC_Encodeable_Delete(readRequest->encodeableType, (void **)&readRequest);
+
+	if (status != SOPC_STATUS_OK || readResponse == NULL)
+	{
+		Logger::getLogger()->error("Read service failed for node %s.", nodeIdStr);
+		return false;
+	}
+
+	if (SOPC_IsGoodStatus(readResponse->ResponseHeader.ServiceResult) &&
+		readResponse->NoOfResults == 1 &&
+		SOPC_IsGoodStatus(readResponse->Results[0].Status))
+	{
+		*outBuiltinTypeId = readResponse->Results[0].Value.BuiltInTypeId;
+		*outArrayType = readResponse->Results[0].Value.ArrayType;
+	}
+	else
+	{
+		Logger::getLogger()->error("Failed to read node %s, StatusCode: 0x%08" PRIX32, nodeIdStr, readResponse->Results[0].Status);
+		status = SOPC_STATUS_NOK;
+	}
+
+	SOPC_Encodeable_Delete(readResponse->encodeableType, (void **)&readResponse);
+	return status == SOPC_STATUS_OK;
+}
+
+/**
+ * Writes a value to a specific node.
+ *
+ * @param nodeIdStr  The node ID string of the node to write to.
+ * @param valueStr   The value to write as a string.
+ * @return           True if the write operation is successful, false otherwise.
+ */
+bool OPCUA::write(const std::string &nodeIdStr, const std::string &valueStr)
+{
+	if (nodeIdStr.empty() || valueStr.empty())
+	{
+		Logger::getLogger()->error("Node ID or value string is empty.");
+		return false;
+	}
+
+	Logger::getLogger()->info("Write request for node %s with value %s", nodeIdStr.c_str(), valueStr.c_str());
+
+	if (m_allowedControlNodes.count(nodeIdStr) == 0)
+	{
+		Logger::getLogger()->error("Write operation not allowed for node %s.", nodeIdStr.c_str());
+		return false;
+	}
+
+	SOPC_BuiltinId builtinTypeId = SOPC_Null_Id;
+	SOPC_VariantArrayType arrayType = SOPC_VariantArrayType_SingleValue;
+
+	if (m_nodeBuiltinIdCache.count(nodeIdStr) == 0)
+	{
+		Logger::getLogger()->debug("Node is not %s found in the cache. Trying to read the node details.", nodeIdStr.c_str());
+		if (!read(nodeIdStr.c_str(), &builtinTypeId, &arrayType))
+		{
+			Logger::getLogger()->error("Failed to read node %s details. Unable to write on the node.", nodeIdStr.c_str());
+			return false;
+		}
+
+		m_nodeBuiltinIdCache[nodeIdStr] = builtinTypeId;
+	}
+	else
+	{
+		Logger::getLogger()->debug("Node %s found in the cache. ", nodeIdStr.c_str());
+		builtinTypeId = m_nodeBuiltinIdCache[nodeIdStr];
+	}
+
+	SOPC_DataValue *writeValue = toDataValue(builtinTypeId, valueStr.c_str());
+	if (writeValue == NULL)
+	{
+		Logger::getLogger()->error("Failed to parse value %s for node %s.", valueStr.c_str(), nodeIdStr.c_str());
+		return false;
+	}
+
+	OpcUa_WriteRequest *writeRequest = SOPC_WriteRequest_Create(1);
+	if (writeRequest == NULL)
+	{
+		Logger::getLogger()->error("Failed to create WriteRequest.");
+		SOPC_DataValue_Clear(writeValue);
+		SOPC_Free(writeValue);
+		return false;
+	}
+
+	SOPC_ReturnStatus status = SOPC_WriteRequest_SetWriteValueFromStrings(
+		writeRequest, 0, nodeIdStr.c_str(), SOPC_AttributeId_Value, NULL, writeValue);
+
+	SOPC_DataValue_Clear(writeValue);
+	SOPC_Free(writeValue);
+
+	if (status != SOPC_STATUS_OK)
+	{
+		Logger::getLogger()->error("Failed to set write value for node %s.", nodeIdStr.c_str());
+		SOPC_Encodeable_Delete(writeRequest->encodeableType, (void **)&writeRequest);
+		return false;
+	}
+
+	status = SOPC_ClientHelperNew_ServiceAsync(m_connection, writeRequest, 0);
+
+	return status == SOPC_STATUS_OK;
 }
 
 /**
