@@ -1,8 +1,19 @@
+#build files
 build
 
 # Requirements
 S2OPC
-check-0.15.2.tar.gz
-check-0.15.2
+check-0.15.2*
 include/sopc_encodeabletype.h
 libexpat
+mbedtls-2.28.7*
+v2.28.7.tar.gz
+
+# tests
+tests/CMakeFiles
+tests/CMakeCache.txt
+
+# editor files
+settings.json
+
+
