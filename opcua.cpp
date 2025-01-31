@@ -967,6 +967,7 @@ void OPCUA::parseConfig(ConfigCategory &config)
 	{
 		// Clear the current list of allowed control nodes
 		m_allowedControlNodes.clear();
+        m_nodeBuiltinIdCache.clear();
 
 		// Retrieve the control list from the configuration
 		auto controlList = config.getValueList("controlList");
