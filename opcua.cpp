@@ -1441,7 +1441,8 @@ void OPCUA::asyncS2ResponseCallBack(SOPC_EncodeableType *encType, const void *re
 				{
 					Logger::getLogger()->debug(
 						"Write service failed with result status: 0x%08" PRIX32, writeResponse->Results[0]);
-				}
+                    Logger::getLogger()->warn("Write service failed, a node value may not have been written to the server.");
+                }
 			}
 			else
 			{
@@ -1454,6 +1455,7 @@ void OPCUA::asyncS2ResponseCallBack(SOPC_EncodeableType *encType, const void *re
             Logger::getLogger()->debug(
                 "Write service failed with service result status: 0x%08" PRIX32,
                 writeResponse->ResponseHeader.ServiceResult);
+            Logger::getLogger()->warn( "Write service failed, a node value may not have been written to the server.");
         }
 	}
 	else if (encType == &OpcUa_ServiceFault_EncodeableType)
@@ -1516,6 +1518,7 @@ SOPC_ReturnStatus OPCUA::initializeS2sdk(const char *traceFilePath)
         initStatus = SOPC_ClientConfigHelper_SetServiceAsyncResponse(asyncS2ResponseCallBack);
         if (initStatus != SOPC_STATUS_OK)
 		{
+            Logger::getLogger()->fatal("Unable to register async callback in S2OPC ClientHelper library");
             throw runtime_error("Unable to register async callback in S2OPC ClientHelper library");
         }
 
@@ -1702,7 +1705,7 @@ SOPC_DataValue *OPCUA::toDataValue(SOPC_BuiltinId builtinId, const char *val)
     // If parsing failed, clear and free the allocated memory
     if (!parseSuccess)
     {
-        Logger::getLogger()->debug("Failed to parse value '%s' for BuiltinId: %d", val, builtinId);
+        Logger::getLogger()->debug("Failed to parse value '%s' for BuiltinId: %d", val, (int)builtinId);
         SOPC_DataValue_Clear(dv);
         SOPC_Free(dv);
         return NULL;
