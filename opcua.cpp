@@ -1440,10 +1440,9 @@ void OPCUA::asyncS2ResponseCallBack(SOPC_EncodeableType *encType, const void *re
 				}
 				else
 				{
-					Logger::getLogger()->debug(
-						"Write service failed with result status: 0x%08" PRIX32, writeResponse->Results[0]);
-                    Logger::getLogger()->warn("Write service failed, a node value may not have been written to the server.");
-                }
+					Logger::getLogger()->error("Write service failed, a node value may not have been written to the server. Status: 0x%08" PRIX32,
+											   writeResponse->ResponseHeader.ServiceResult);
+				}
 			}
 			else
 			{
@@ -1453,11 +1452,9 @@ void OPCUA::asyncS2ResponseCallBack(SOPC_EncodeableType *encType, const void *re
 		}
 		else
 		{
-            Logger::getLogger()->debug(
-                "Write service failed with service result status: 0x%08" PRIX32,
-                writeResponse->ResponseHeader.ServiceResult);
-            Logger::getLogger()->warn( "Write service failed, a node value may not have been written to the server.");
-        }
+			Logger::getLogger()->error("Write service failed, a node value may not have been written to the server. Status: 0x%08" PRIX32,
+									   writeResponse->ResponseHeader.ServiceResult);
+		}
 	}
 	else if (encType == &OpcUa_ServiceFault_EncodeableType)
 	{
