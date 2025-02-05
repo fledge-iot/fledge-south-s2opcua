@@ -967,7 +967,7 @@ void OPCUA::parseConfig(ConfigCategory &config)
 	{
 		// Clear the current list of allowed control nodes
 		m_allowedControlNodes.clear();
-        m_nodeBuiltinIdCache.clear();
+		m_nodeBuiltinIdCache.clear();
 
 		// Retrieve the control list from the configuration
 		auto controlList = config.getValueList("controlList");
@@ -1441,14 +1441,14 @@ void OPCUA::asyncS2ResponseCallBack(SOPC_EncodeableType *encType, const void *re
 				else
 				{
 					Logger::getLogger()->error("Write service failed, a node value may not have been written to the server. Status: 0x%08" PRIX32,
-											   writeResponse->ResponseHeader.ServiceResult);
+											   writeResponse->Results[0]);
 				}
 			}
 			else
 			{
-                Logger::getLogger()->debug(
-                    "Unexpected number of results in WriteResponse: %d", writeResponse->NoOfResults);
-            }
+				Logger::getLogger()->debug(
+					"Unexpected number of results in WriteResponse: %d", writeResponse->NoOfResults);
+			}
 		}
 		else
 		{
@@ -1461,13 +1461,13 @@ void OPCUA::asyncS2ResponseCallBack(SOPC_EncodeableType *encType, const void *re
 		// Cast the response to the appropriate type
 		const OpcUa_ServiceFault *serviceFault = (const OpcUa_ServiceFault *)response;
 
-        Logger::getLogger()->debug("Service fault received with status: 0x%08" PRIX32, serviceFault->ResponseHeader.ServiceResult);
-    }
+		Logger::getLogger()->debug("Service fault received with status: 0x%08" PRIX32, serviceFault->ResponseHeader.ServiceResult);
+	}
 	else
 	{
 		// Log and ignore other response types that are not handled by this callback
-        Logger::getLogger()->debug("Unhandled response type received in asyncS2ResponseCallBack.");
-    }
+		Logger::getLogger()->debug("Unhandled response type received in asyncS2ResponseCallBack.");
+	}
 }
 
 /**
@@ -1783,21 +1783,21 @@ bool OPCUA::write(const std::string &nodeIdStr, const std::string &valueStr)
 {
 	if (nodeIdStr.empty())
 	{
-        Logger::getLogger()->error("Node ID is empty. Unable to proceed with the write operation.");
+		Logger::getLogger()->error("Node ID is empty. Unable to proceed with the write operation.");
 		return false;
 	}
 
-    if (valueStr.empty())
-    {
-        Logger::getLogger()->error("Value is empty. Unable to proceed with the write operation for node %s.", nodeIdStr.c_str());
-        return false;
-    }
+	if (valueStr.empty())
+	{
+		Logger::getLogger()->error("Value is empty. Unable to proceed with the write operation for node %s.", nodeIdStr.c_str());
+		return false;
+	}
 
     Logger::getLogger()->debug("Initiating write request for node '%s' with value '%s'", nodeIdStr.c_str(), valueStr.c_str());
 
 	if (m_allowedControlNodes.count(nodeIdStr) == 0)
 	{
-        Logger::getLogger()->error("Write operation not allowed for node %s. This node is not in the list of allowed control nodes.", nodeIdStr.c_str());
+		Logger::getLogger()->error("Write operation not allowed for node %s. This node is not in the list of allowed control nodes.", nodeIdStr.c_str());
 		return false;
 	}
 
@@ -1806,11 +1806,11 @@ bool OPCUA::write(const std::string &nodeIdStr, const std::string &valueStr)
 
 	if (m_nodeBuiltinIdCache.count(nodeIdStr) == 0)
 	{
-        Logger::getLogger()->debug("Node %s not found in cache. Attempting to read node details.", nodeIdStr.c_str());
-        
+		Logger::getLogger()->debug("Node %s not found in cache. Attempting to read node details.", nodeIdStr.c_str());
+		
 		if (!read(nodeIdStr.c_str(), &builtinTypeId, &arrayType))
 		{
-            Logger::getLogger()->error("Failed to read node %s details. Unable to write value '%s' to the node.", nodeIdStr.c_str(), valueStr.c_str());
+			Logger::getLogger()->error("Failed to read node %s details. Unable to write value '%s' to the node.", nodeIdStr.c_str(), valueStr.c_str());
 			return false;
 		}
 
@@ -1819,21 +1819,21 @@ bool OPCUA::write(const std::string &nodeIdStr, const std::string &valueStr)
 	else
 	{
 		builtinTypeId = m_nodeBuiltinIdCache[nodeIdStr];
-        Logger::getLogger()->debug("Node %s found in the cache with BuiltinId: %d.", nodeIdStr.c_str(), (int)builtinTypeId);
-    }
+		Logger::getLogger()->debug("Node %s found in the cache with BuiltinId: %d.", nodeIdStr.c_str(), (int)builtinTypeId);
+	}
 
 	SOPC_DataValue *writeValue = toDataValue(builtinTypeId, valueStr.c_str());
 
 	if (writeValue == NULL)
 	{
-        Logger::getLogger()->error("Failed to convert value '%s' to the expected type for node '%s'.", valueStr.c_str(), nodeIdStr.c_str());
+		Logger::getLogger()->error("Failed to convert value '%s' to the expected type for node '%s'.", valueStr.c_str(), nodeIdStr.c_str());
 		return false;
 	}
 
 	OpcUa_WriteRequest *writeRequest = SOPC_WriteRequest_Create(1);
 	if (writeRequest == NULL)
 	{
-        Logger::getLogger()->debug("Failed to create WriteRequest for node %s with value %s.", nodeIdStr.c_str(), valueStr.c_str());
+		Logger::getLogger()->debug("Failed to create WriteRequest for node %s with value %s.", nodeIdStr.c_str(), valueStr.c_str());
 		SOPC_DataValue_Clear(writeValue);
 		SOPC_Free(writeValue);
 		return false;
@@ -1847,7 +1847,7 @@ bool OPCUA::write(const std::string &nodeIdStr, const std::string &valueStr)
 
 	if (status != SOPC_STATUS_OK)
 	{
-        Logger::getLogger()->debug("Failed to set write value for node %s with value %s.", nodeIdStr.c_str(), valueStr.c_str());
+		Logger::getLogger()->debug("Failed to set write value for node %s with value %s.", nodeIdStr.c_str(), valueStr.c_str());
 		SOPC_Encodeable_Delete(writeRequest->encodeableType, (void **)&writeRequest);
 		return false;
 	}
