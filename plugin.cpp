@@ -85,7 +85,6 @@ static const char *default_config = QUOTE({
         "listName": "subscriptions",
         "default" : "{ \"subscriptions\" : [  \"ns=3;i=1001\", \"ns=3;i=1002\" ] }",
         "displayName" : "OPC UA Node Subscriptions",
-        "group" : "OPC UA Subscriptions",
         "order" : "11"
     },
     "filterRegex" : {
@@ -93,7 +92,7 @@ static const char *default_config = QUOTE({
         "type" : "string",
         "default" : "",
         "displayName" : "Name Filter Regular Expression",
-        "group" : "OPC UA Subscriptions",
+        "group" : "Subscriptions Filtering",
         "order" : "12"
     },
     "filterScope" : {
@@ -107,7 +106,7 @@ static const char *default_config = QUOTE({
         "default" : "Variable",
         "displayName" : "Name Filter Scope",
         "order" : "13",
-        "group" : "OPC UA Subscriptions"
+        "group" : "Subscriptions Filtering"
     },
     "filterAction" : {
         "description" : "For Browse Names that match the filter, Include or Exclude the Objects or Variables",
@@ -119,7 +118,7 @@ static const char *default_config = QUOTE({
         "default" : "Exclude",
         "displayName" : "Name Filter Action",
         "order" : "14",
-        "group" : "OPC UA Subscriptions"
+        "group" : "Subscriptions Filtering"
     },
     "parentPathMetadata" : {
         "description" : "Include full OPC UA path as a Datapoint in a Fledge Reading",
