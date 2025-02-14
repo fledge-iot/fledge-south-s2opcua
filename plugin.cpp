@@ -92,7 +92,7 @@ static const char *default_config = QUOTE({
         "type" : "string",
         "default" : "",
         "displayName" : "Name Filter Regular Expression",
-        "group" : "Subscriptions Filtering",
+        "group" : "Subscription Filtering",
         "order" : "12"
     },
     "filterScope" : {
@@ -106,7 +106,7 @@ static const char *default_config = QUOTE({
         "default" : "Variable",
         "displayName" : "Name Filter Scope",
         "order" : "13",
-        "group" : "Subscriptions Filtering"
+        "group" : "Subscription Filtering"
     },
     "filterAction" : {
         "description" : "For Browse Names that match the filter, Include or Exclude the Objects or Variables",
@@ -118,7 +118,7 @@ static const char *default_config = QUOTE({
         "default" : "Exclude",
         "displayName" : "Name Filter Action",
         "order" : "14",
-        "group" : "Subscriptions Filtering"
+        "group" : "Subscription Filtering"
     },
     "parentPathMetadata" : {
         "description" : "Include full OPC UA path as a Datapoint in a Fledge Reading",
