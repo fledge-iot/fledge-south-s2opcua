@@ -4,7 +4,7 @@
 .. |opcua_filtering| image:: images/opcua_filtering.jpg
 .. |opcua_advanced| image:: images/opcua_advanced.jpg
 .. |opcua_security| image:: images/opcua_security.jpg
-.. |opcua_security| image:: images/opcua_control.jpg
+.. |opcua_control| image:: images/opcua_control.jpg
 .. |opcua_2| image:: images/opcua_2.jpg
 .. |opcua_3| image:: images/opcua_3.jpg
 .. |opcua_4| image:: images/opcua_4.jpg
@@ -121,7 +121,7 @@ This is important for both *Single datapoint* and *Single Asset* naming schemes:
 OPC UA Subscriptions
 --------------------
 
-The OPC UA Subscriptions tab allows you to define the Variables to be read from the OPC UA server's namespace. The variables are read on an exception basis, a subscription is created with the OPC UA server and it will send the data only when it changes. This allows for very efficient communication and also the support for reading large numbers of variables from the OPC UA server.
+The OPC UA Subscriptions tab allows you to define the Variables to be read from the OPC UA server's namespace. The variables are read on an exception basis; a subscription is created with the OPC UA server and it will send the data only when it changes. This allows for very efficient communication and also the support for reading large numbers of variables from the OPC UA server.
 
 +-----------------------+
 | |opcua_subscriptions| |
@@ -130,7 +130,7 @@ The OPC UA Subscriptions tab allows you to define the Variables to be read from 
 Information from Variables is used to define Assets and Datapoints in Fledge.
 See the :ref:`Subscriptions` section for a description of OPC UA Objects and Variables and how to specify them.
 
-  - **OPC UA Node Subscriptions**: This is a list of OPC UA NodeIds that are used to create the subscription within the OPCUA server. Each entry in the list is an OPC UA NodeId. To add a new item to the list click on the *+ Add new item* link at the bottom of the list.
+  - **OPC UA Node Subscriptions**: This is a list of OPC UA NodeIds that are used to create the subscription within the OPC UA server. Each entry in the list is an OPC UA NodeId. To add a new item to the list click on the *+ Add new item* link at the bottom of the list.
 
     The NodeIds can be identifiers of Variables, or Objects that are the parents of Variables.
 
