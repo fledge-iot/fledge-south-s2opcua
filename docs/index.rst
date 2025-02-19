@@ -1,8 +1,10 @@
 .. Images
 .. |opcua_1| image:: images/opcua_1.jpg
 .. |opcua_subscriptions| image:: images/opcua_subscriptions.jpg
+.. |opcua_filtering| image:: images/opcua_filtering.jpg
 .. |opcua_advanced| image:: images/opcua_advanced.jpg
 .. |opcua_security| image:: images/opcua_security.jpg
+.. |opcua_security| image:: images/opcua_control.jpg
 .. |opcua_2| image:: images/opcua_2.jpg
 .. |opcua_3| image:: images/opcua_3.jpg
 .. |opcua_4| image:: images/opcua_4.jpg
@@ -55,12 +57,17 @@ The *fledge-south-s2opcua* configuration parameters are divided into a set of ta
 
   - OPC UA Subscriptions
 
+  - Subscription Filtering
+
   - OPC UA Advanced
 
   - OPC UA Security
 
+  - Control List
+
 Basic Configuration
 -------------------
+
 The Basic configuration tab is shown below:
 
 +-----------+
@@ -113,7 +120,8 @@ This is important for both *Single datapoint* and *Single Asset* naming schemes:
 
 OPC UA Subscriptions
 --------------------
-The OPC UA Subscriptions tab allows you to define the Variables to be read from the OPC UA server's namespace:
+
+The OPC UA Subscriptions tab allows you to define the Variables to be read from the OPC UA server's namespace. The variables are read on an exception basis, a subscription is created with the OPC UA server and it will send the data only when it changes. This allows for very efficient communication and also the support for reading large numbers of variables from the OPC UA server.
 
 +-----------------------+
 | |opcua_subscriptions| |
@@ -122,8 +130,21 @@ The OPC UA Subscriptions tab allows you to define the Variables to be read from 
 Information from Variables is used to define Assets and Datapoints in Fledge.
 See the :ref:`Subscriptions` section for a description of OPC UA Objects and Variables and how to specify them.
 
-  - **OPC UA Node Subscriptions**: This is a JSON document with an array of OPC UA NodeIds.
+  - **OPC UA Node Subscriptions**: This is a list of OPC UA NodeIds that are used to create the subscription within the OPCUA server. Each entry in the list is an OPC UA NodeId. To add a new item to the list click on the *+ Add new item* link at the bottom of the list.
+
     The NodeIds can be identifiers of Variables, or Objects that are the parents of Variables.
+
+Subscription Filtering
+~~~~~~~~~~~~~~~~~~~~~~
+
+The Subscription Filtering tab allows you to filter the variables that are read from the OPC UA server.
+
++-------------------+
+| |opcua_filtering| |
++-------------------+
+
+This is useful if subscribing to objects or hierarchies within the OPC UA server.
+
   - **Name Filter Regular Expression**: The regular expression (regex) to be matched against the Browse Name of the node. The regex has to match the Browse Name exactly.
   - **Name Filter Scope**: Specifies scope of the node filtering. There are 3 options in the drop-down:
 
@@ -255,6 +276,17 @@ The OPC UA Security tab contains a set of configuration items that is used for s
 
   - **Certificate Revocation List**: The name of the certificate authority's Certificate Revocation List. This is a DER format certificate. If using self-signed certificates this should be left blank.
 
+Control List
+------------
+
+The Control List tab is used to define the set of OPC UA nodes that can be written to by the south service via the control mechanisms of Fledge.
+
++-----------------+
+| |opcua_control| |
++-----------------+
+
+In much the same way that a list of OPC UA NodeIds is created for the subscription, a list of OPC UA nodes that may be written is also created. To add a new item to the list click on the *+ Add item* link at the base of the list.
+
 .. _Subscriptions:
 
 Subscriptions
@@ -269,7 +301,7 @@ An important type of Object is the Folder which can hold any number of Objects a
 A Variable has a time-series data value which consists of a value, status and timestamp.
 The plugin must find Variables in the Address Space in order to subscribe to updates in data values.
 
-Subscriptions to OPC UA Nodes are stored as a JSON object which contains an array of NodeIds as described in the :ref:`OPC UA Subscriptions` tab.
+Subscriptions to OPC UA Nodes are stored as a list of NodeIds as described in the :ref:`OPC UA Subscriptions` tab.
 If the NodeId identifies a Variable, the Variable will be added to the plugin's subscription list.
 If the NodeId identifies an Object, the plugin will recurse down the hierarchy below that Object and add every Variable it finds to the subscription list.
 
@@ -287,9 +319,12 @@ Subscription Examples
 
 The examples in the section come from the `Prosys OPC UA Simulation Server <https://prosysopc.com/products/opc-ua-simulation-server/>`_.
 
-.. code-block:: console
+.. list-table::
+   :header-rows: 1
 
-    {"subscriptions":["ns=3;s=85/0:Simulation","ns=6;s=MyLevel"]}
+   * - NodeID
+   * - ns=3;s=85/0:Simulation
+   * - ns=6;s=MyLevel
 
 The plugin processes as follows:
 
@@ -300,9 +335,13 @@ The plugin processes as follows:
  - NodeId *ns=6;s=MyLevel* identifies a Variable in Namespace 6 in the *MyDevice* Object which is in the *MyObjects* Folder which in turn is in the root *Objects* Folder.
    Since *ns=6;s=MyLevel* is the NodeId of a Variable, it will be subscribed directly.
 
-.. code-block:: console
+.. list-table::
+   :header-rows: 1
 
-    {"subscriptions":["ns=3;i=1004","ns=6;s=MyLevel","ns=3;i=1003"]}
+   * - NodeID
+   * - ns=3;i=1004
+   * - ns=6;s=MyLevel
+   * - ns=3;i=1003
 
 The plugin processes as follows:
 
