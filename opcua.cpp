@@ -1433,6 +1433,8 @@ void OPCUA::asyncS2ResponseCallBack(SOPC_EncodeableType *encType, const void *re
 		auto response = getPendingWriteResponse(handle);
 		std::string nodeIdStr = response.first;
 		std::string valueStr = response.second;
+		
+		removePendingWriteResponse(handle);
 
 		// Check the overall service result status
 		if (SOPC_IsGoodStatus(writeResponse->ResponseHeader.ServiceResult))
