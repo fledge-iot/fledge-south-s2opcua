@@ -26,7 +26,7 @@ using namespace std;
 
 static OPCUA *opcua = NULL;
 unsigned int OPCUA::requestHandle;
-std::unordered_map<int, std::pair<std::string, std::string > >	OPCUA::pendingWriteResponses;
+std::unordered_map<unsigned int, std::pair<std::string, std::string > >	OPCUA::pendingWriteResponses;
 
 /**
  * Callback routine to return username and password to the S2OPC Toolkit.

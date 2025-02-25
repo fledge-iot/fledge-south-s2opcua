@@ -229,7 +229,7 @@ class OPCUA
 	std::unordered_map<std::string, SOPC_BuiltinId>		m_nodeBuiltinIdCache;
 
 	static unsigned int requestHandle;
-	static std::unordered_map<int, std::pair<std::string, std::string > >	pendingWriteResponses;
+	static std::unordered_map<unsigned int, std::pair<std::string, std::string > >	pendingWriteResponses;
 	enum NodeFilterScope {
 		SCOPE_OBJECT=1,
 		SCOPE_VARIABLE,
