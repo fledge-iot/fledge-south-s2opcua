@@ -98,9 +98,9 @@ class OPCUA
 		std::string	&getUsername() { return m_username; }
 		std::string	&getPassword() { return m_password; }
 
-	void        dataChange(const char *nodeId, const SOPC_DataValue *value);
-	void	    disconnect();
-	void	    retry();
+		void        dataChange(const char *nodeId, const SOPC_DataValue *value);
+		void	    disconnect();
+		void	    retry();
 	private:
 
 	class OPCUASecurity
@@ -154,7 +154,10 @@ class OPCUA
 						const std::string &clientPublic,
 						const std::string &clientKey,
 						const std::string &serverPublic);
-	
+	static unsigned int getNewRequestHandle();
+	static void addPendingWriteResponse(unsigned int requestHandle, const std::string &nodeId, const std::string &value);
+	static std::pair<std::string, std::string> getPendingWriteResponse(unsigned int requestHandle);
+	static void removePendingWriteResponse(unsigned int requestHandle);
 	SOPC_ClientConnection *m_connection;
 	SOPC_ClientHelper_Subscription *m_subscription;
 	char 			**m_nodeIds;
@@ -224,6 +227,9 @@ class OPCUA
 	double				m_dcfDeadbandValue;
 	std::unordered_set<std::string>		m_allowedControlNodes;
 	std::unordered_map<std::string, SOPC_BuiltinId>		m_nodeBuiltinIdCache;
+
+	static unsigned int requestHandle;
+	static std::unordered_map<unsigned int, std::pair<std::string, std::string > >	pendingWriteResponses;
 	enum NodeFilterScope {
 		SCOPE_OBJECT=1,
 		SCOPE_VARIABLE,

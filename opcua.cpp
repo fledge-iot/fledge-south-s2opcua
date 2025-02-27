@@ -25,6 +25,8 @@
 using namespace std;
 
 static OPCUA *opcua = NULL;
+unsigned int OPCUA::requestHandle;
+std::unordered_map<unsigned int, std::pair<std::string, std::string > >	OPCUA::pendingWriteResponses;
 
 /**
  * Callback routine to return username and password to the S2OPC Toolkit.
@@ -1427,6 +1429,12 @@ void OPCUA::asyncS2ResponseCallBack(SOPC_EncodeableType *encType, const void *re
 	{
 		// Cast the response to the appropriate type
 		const OpcUa_WriteResponse *writeResponse = (const OpcUa_WriteResponse *)response;
+		unsigned int handle = (unsigned int)appContext;
+		auto response = getPendingWriteResponse(handle);
+		std::string nodeIdStr = response.first;
+		std::string valueStr = response.second;
+		
+		removePendingWriteResponse(handle);
 
 		// Check the overall service result status
 		if (SOPC_IsGoodStatus(writeResponse->ResponseHeader.ServiceResult))
@@ -1436,23 +1444,25 @@ void OPCUA::asyncS2ResponseCallBack(SOPC_EncodeableType *encType, const void *re
 			{
 				if (SOPC_IsGoodStatus(writeResponse->Results[0]))
 				{
-					Logger::getLogger()->debug("Write service succeeded.");
+					Logger::getLogger()->debug("Write service succeeded for the node %s with value = %s.", nodeIdStr.c_str(), valueStr.c_str());
 				}
 				else
 				{
-					Logger::getLogger()->error("Write service failed, a node value may not have been written to the server. Status: 0x%08" PRIX32,
+					Logger::getLogger()->error("Write service failed for the node %s with value = %s, the value may not have been written to the server. Status: 0x%08" PRIX32,
+											   nodeIdStr.c_str(), valueStr.c_str(),
 											   writeResponse->Results[0]);
 				}
 			}
 			else
 			{
 				Logger::getLogger()->debug(
-					"Unexpected number of results in WriteResponse: %d", writeResponse->NoOfResults);
+					"Unexpected number of results in WriteResponse: %d for the node %s with value = %s", nodeIdStr.c_str(), valueStr.c_str(), writeResponse->NoOfResults);
 			}
 		}
 		else
 		{
-			Logger::getLogger()->error("Write service failed, a node value may not have been written to the server. Status: 0x%08" PRIX32,
+			Logger::getLogger()->error("Write service failed for the node %s with value = %s, the value may not have been written to the server. Status: 0x%08" PRIX32,
+									   nodeIdStr.c_str(), valueStr.c_str(),
 									   writeResponse->ResponseHeader.ServiceResult);
 		}
 	}
@@ -1852,7 +1862,11 @@ bool OPCUA::write(const std::string &nodeIdStr, const std::string &valueStr)
 		return false;
 	}
 
-	status = SOPC_ClientHelperNew_ServiceAsync(m_connection, writeRequest, 0);
+	unsigned int handle = getNewRequestHandle();
+
+	addPendingWriteResponse(handle, nodeIdStr, valueStr);
+
+	status = SOPC_ClientHelperNew_ServiceAsync(m_connection, writeRequest, handle);
 
 	return status == SOPC_STATUS_OK;
 }
@@ -3355,4 +3369,53 @@ bool OPCUA::writeS2ConfigXML(const std::string &xmlFileName, const OPCUASecurity
 	fclose(f);
 
 	return true;
+}
+
+/**
+ * Create new request handle
+ * 
+ * @return	New request handle
+ */
+unsigned int OPCUA::getNewRequestHandle()
+{
+	return requestHandle++;
+}
+
+/**
+ * Add a pending read response to the list
+ *
+ * @param requestHandle	Request handle
+ * @param response		Read response
+ */
+void OPCUA::addPendingWriteResponse(unsigned int requestHandle, const std::string &nodeIdStr, const std::string &value)
+{
+	pendingWriteResponses[requestHandle] = make_pair(nodeIdStr, value);
+}
+
+/**
+ * Get a pending write response from the list
+ *
+ * @param requestHandle	Request handle
+ * @return				Write response
+ */
+std::pair<std::string, std::string> OPCUA::getPendingWriteResponse(unsigned int requestHandle)
+{
+	std::pair<std::string, std::string> response{ "", "" };
+	auto it = pendingWriteResponses.find(requestHandle);
+	if (it != pendingWriteResponses.end())
+	{
+		response = it->second;
+		pendingWriteResponses.erase(it);
+	}
+	return response;
+}
+
+/**
+ * Remove a pending write response from the list
+ *
+ * @param requestHandle	Request handle
+ */
+void OPCUA::removePendingWriteResponse(unsigned int requestHandle)
+{
+	pendingWriteResponses.erase(requestHandle);
 }
