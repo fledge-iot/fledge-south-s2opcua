@@ -1,8 +1,10 @@
 .. Images
 .. |opcua_1| image:: images/opcua_1.jpg
 .. |opcua_subscriptions| image:: images/opcua_subscriptions.jpg
+.. |opcua_filtering| image:: images/opcua_filtering.jpg
 .. |opcua_advanced| image:: images/opcua_advanced.jpg
 .. |opcua_security| image:: images/opcua_security.jpg
+.. |opcua_control| image:: images/opcua_control.jpg
 .. |opcua_2| image:: images/opcua_2.jpg
 .. |opcua_3| image:: images/opcua_3.jpg
 .. |opcua_4| image:: images/opcua_4.jpg
@@ -55,12 +57,17 @@ The *fledge-south-s2opcua* configuration parameters are divided into a set of ta
 
   - OPC UA Subscriptions
 
+  - Subscription Filtering
+
   - OPC UA Advanced
 
   - OPC UA Security
 
+  - Control List
+
 Basic Configuration
 -------------------
+
 The Basic configuration tab is shown below:
 
 +-----------+
@@ -74,39 +81,47 @@ The following configuration parameters are available:
 
   - **OPC UA Server URL**: This is the URL of the OPC UA server from which data will be extracted. The URL should be of the form *opc.tcp://..../*
 
-  - **Asset Naming Scheme**: The plugin can ingest data into a number of different assets based on the selection of the asset naming scheme:
+  - **Asset Naming Scheme**: The plugin can ingest data into a number of different assets based on the selection of the asset naming scheme.
+    This list of options notes that either the Variable Browse Name or Node Id will be used in asset and datapoint naming.
+    The *Datapoint Name* configuration on this tab allows you to choose which of these two properties to use:
 
     +-----------+
     | |opcua_5| |
     +-----------+
 
-     - *Single datapoint*: An asset will be created for each Variable read from the OPC UA server. The asset will contain a single datapoint whose name will be taken from the Browse Name of the Variable read. The asset name will be created by appending the Browse Name of the Variable to the fixed asset name prefix defined in the *Asset Name* configuration option above.
+     - *Single datapoint*: An asset will be created for each Variable read from the OPC UA server. The asset will contain a single datapoint whose name will be taken from the Browse Name or Node Id of the Variable read. The asset name will be created by appending the Browse Name or Node Id of the Variable to the fixed asset name prefix defined in the *Asset Name* configuration option above.
 
-     - *Single datapoint object prefix*: An asset will be created for each Variable read from the OPC UA server. The asset will contain a single datapoint whose name will be taken from the Browse Name of the Variable read. The asset name will be created by appending the Browse Name of the Variable to the Browse Name of the Variable's parent Object.
+     - *Single datapoint object prefix*: An asset will be created for each Variable read from the OPC UA server. The asset will contain a single datapoint whose name will be taken from the Browse Name or Node Id of the Variable read. The asset name will be created by appending the Browse Name or Node Id of the Variable to the Browse Name of the Variable's parent Object.
 
-     - *Asset per object*: An asset will be created for each OPC UA Object that is subscribed to. That asset will be named using the Browse Name of the parent of the OPC UA Object and will contain a datapoint per Variable within the OPC UA Object. The name of the datapoint will be the Browse Name of the Variable.
+     - *Asset per object*: An asset will be created for each OPC UA Object that is subscribed to. The asset will be named using the Browse Name of the parent of the OPC UA Object and will contain a datapoint per Variable within the OPC UA Object. The name of the datapoint will be the Browse Name or Node Id of the Variable.
 
-     - *Single asset*: A single asset will be created with all the Variables read from the OPC UA server as datapoints within that asset. The asset name will be taken from the *Asset Name* configuration item and the datapoint name from the Browse Name of the OPC UA Variable.
+     - *Single asset*: A single asset will be created with all the Variables read from the OPC UA server as datapoints within that asset. The asset name will be taken from the *Asset Name* configuration item. The datapoint name will be the Browse Name or Node Id of the OPC UA Variable.
+
+  - **Datapoint Name**: The OPC UA Variable property to use as the Datapoint name. Options are *Browse Name* (default) and *Node Id*.
 
 Handling Duplicate Browse Names
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-The plugin uses the Browse Names of the OPC UA Variables to name the datapoints with an asset.
-There is no requirement that the Browse Names be unique, however.
+Duplicate Browse Names are not an issue if the *Datapoint Name* configuration is set to *Node Id* because Node Ids are always unique within the OPC UA Server's Address Space.
+
+If the *Datapoint Name* configuration is set to *Browse Name*, however, the plugin uses the Browse Names of the OPC UA Variables to name the datapoints within an asset.
+There is no requirement that the Browse Names be unique.
 The plugin resolves this by detecting duplicate Browse Names.
-If one is found, the NodeId is appended to the Browse Name to create a unique datapoint name.
+If duplicates are found, the Node Id is appended to each Browse Name to create a unique datapoint name.
 
 This is important for both *Single datapoint* and *Single Asset* naming schemes:
 
-  - In the case of the *Single datapoint*, the asset name is the same as the datapoint name and is global for all OPC UA Variables that are monitored.
-    The result of this that the same asset name and datapoint name would be used to store multiple OPC UA Variables.
-  - In the case of *Single Asset*, datapoints names are kept within a single asset; an error would occur if two datapoints had the same name.
+  - In the case of the *Single datapoint*, the asset name is the fixed asset name prefix appended by the OPC UA Variable Browse Name.
+    Since identical Browse Names may appear in many OPC UA Subscriptions, the asset name prefix/Browse Name combination may not be unique.
+  - In the case of *Single Asset*, all datapoints are kept within a single asset.
+    Since identical Browse Names may appear in many OPC UA Subscriptions, the Browse Name may not be unique.
 
 .. _OPC UA Subscriptions:
 
 OPC UA Subscriptions
 --------------------
-The OPC UA Subscriptions tab allows you to define the Variables to be read from the OPC UA server's namespace:
+
+The OPC UA Subscriptions tab allows you to define the Variables to be read from the OPC UA server's namespace. The variables are read on an exception basis; a subscription is created with the OPC UA server and it will send the data only when it changes. This allows for very efficient communication and also the support for reading large numbers of variables from the OPC UA server.
 
 +-----------------------+
 | |opcua_subscriptions| |
@@ -115,8 +130,21 @@ The OPC UA Subscriptions tab allows you to define the Variables to be read from 
 Information from Variables is used to define Assets and Datapoints in Fledge.
 See the :ref:`Subscriptions` section for a description of OPC UA Objects and Variables and how to specify them.
 
-  - **OPC UA Node Subscriptions**: This is a JSON document with an array of OPC UA NodeIds.
+  - **OPC UA Node Subscriptions**: This is a list of OPC UA NodeIds that are used to create the subscription within the OPC UA server. Each entry in the list is an OPC UA NodeId. To add a new item to the list click on the *+ Add new item* link at the bottom of the list.
+
     The NodeIds can be identifiers of Variables, or Objects that are the parents of Variables.
+
+Subscription Filtering
+~~~~~~~~~~~~~~~~~~~~~~
+
+The Subscription Filtering tab allows you to filter the variables that are read from the OPC UA server.
+
++-------------------+
+| |opcua_filtering| |
++-------------------+
+
+This is useful if subscribing to objects or hierarchies within the OPC UA server.
+
   - **Name Filter Regular Expression**: The regular expression (regex) to be matched against the Browse Name of the node. The regex has to match the Browse Name exactly.
   - **Name Filter Scope**: Specifies scope of the node filtering. There are 3 options in the drop-down:
 
@@ -145,7 +173,7 @@ The OPC UA Advanced tab allows advanced configuration parameters to be set:
     The path always begins with a forward slash.
     The path does not include the *Objects* folder or the subscribed Node.
   - **Full OPC UA Path meta data name**: The data point name to use when adding the full OPC UA path to every reading. Default is *OPCUAPath*.
-  - **Debug Trace File**: Enable the S2OPCUA OPCUA Toolkit trace file for debugging. If enabled, log files will appear in the directory */usr/local/fledge/data/logs*.
+  - **Debug Trace File**: Enable the S2OPCUA OPCUA Toolkit trace file for debugging. If enabled, log files will appear in the directory */usr/local/fledge/data/logs/debug-trace*.
   - **MonitoredItem block size**: The number of items passed in single call to the S2OPCUA OPCUA Toolkit when requesting to monitor data change events in the OPC UA server. The default value will work in most of the cases. If the error **Failed to add Monitored Items** is written to the logs then try reducing the number of items sent in each call until this error stops occurring. Reducing the number too far will impact the performance, increasing the time it takes to setup the connection with the server and get the first data back from the server. Using very large values for this call will put extra stress on the OPC UA server and also increase the memory footprint of the plugin. The minimum value of this is 1, the default is 100.
   - **Minimum Reporting Interval**: This control the minimum interval between reports of data changes in subscriptions. It sets an upper limit to the rate that data will be ingested into the plugin and is expressed in milliseconds.
   - **Enable Data Change Filter**: Enable Data Change Filtering in the OPC UA server.
@@ -248,6 +276,17 @@ The OPC UA Security tab contains a set of configuration items that is used for s
 
   - **Certificate Revocation List**: The name of the certificate authority's Certificate Revocation List. This is a DER format certificate. If using self-signed certificates this should be left blank.
 
+Control List
+------------
+
+The Control List tab is used to define the set of OPC UA nodes that can be written to by the south service via the control mechanisms of Fledge.
+
++-----------------+
+| |opcua_control| |
++-----------------+
+
+In much the same way that a list of OPC UA NodeIds is created for the subscription, a list of OPC UA nodes that may be written is also created. To add a new item to the list click on the *+ Add item* link at the base of the list.
+
 .. _Subscriptions:
 
 Subscriptions
@@ -262,7 +301,7 @@ An important type of Object is the Folder which can hold any number of Objects a
 A Variable has a time-series data value which consists of a value, status and timestamp.
 The plugin must find Variables in the Address Space in order to subscribe to updates in data values.
 
-Subscriptions to OPC UA Nodes are stored as a JSON object which contains an array of NodeIds as described in the :ref:`OPC UA Subscriptions` tab.
+Subscriptions to OPC UA Nodes are stored as a list of NodeIds as described in the :ref:`OPC UA Subscriptions` tab.
 If the NodeId identifies a Variable, the Variable will be added to the plugin's subscription list.
 If the NodeId identifies an Object, the plugin will recurse down the hierarchy below that Object and add every Variable it finds to the subscription list.
 
@@ -280,9 +319,12 @@ Subscription Examples
 
 The examples in the section come from the `Prosys OPC UA Simulation Server <https://prosysopc.com/products/opc-ua-simulation-server/>`_.
 
-.. code-block:: console
+.. list-table::
+   :header-rows: 1
 
-    {"subscriptions":["ns=3;s=85/0:Simulation","ns=6;s=MyLevel"]}
+   * - NodeID
+   * - ns=3;s=85/0:Simulation
+   * - ns=6;s=MyLevel
 
 The plugin processes as follows:
 
@@ -293,9 +335,13 @@ The plugin processes as follows:
  - NodeId *ns=6;s=MyLevel* identifies a Variable in Namespace 6 in the *MyDevice* Object which is in the *MyObjects* Folder which in turn is in the root *Objects* Folder.
    Since *ns=6;s=MyLevel* is the NodeId of a Variable, it will be subscribed directly.
 
-.. code-block:: console
+.. list-table::
+   :header-rows: 1
 
-    {"subscriptions":["ns=3;i=1004","ns=6;s=MyLevel","ns=3;i=1003"]}
+   * - NodeID
+   * - ns=3;i=1004
+   * - ns=6;s=MyLevel
+   * - ns=3;i=1003
 
 The plugin processes as follows:
 

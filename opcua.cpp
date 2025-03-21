@@ -18,10 +18,15 @@
 #include <math.h>
 #include <regex>
 #include <file_utils.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <parser.h>
 
 using namespace std;
 
 static OPCUA *opcua = NULL;
+unsigned int OPCUA::requestHandle;
+std::unordered_map<unsigned int, std::pair<std::string, std::string > >	OPCUA::pendingWriteResponses;
 
 /**
  * Callback routine to return username and password to the S2OPC Toolkit.
@@ -57,7 +62,7 @@ static bool UsernamePasswordCallback(char** outUsername, char** outPassword)
 		Logger::getLogger()->debug("UsernamePasswordCallback: username '%s'", username.c_str());
 	}
 
-    return true;
+	return true;
 }
 
 /**
@@ -517,11 +522,16 @@ void OPCUA::dataChange(const char *nodeId, const SOPC_DataValue *value)
 			Logger::getLogger()->debug("DataChange: %s,%s,%s", DateTimeToString(value->SourceTimestamp).c_str(), dpv->toString().c_str(), nodeId);
 			vector<Datapoint *> points;
 			string dpname = nodeId;
-			auto res = m_nodes.find(nodeId);
-			if (res != m_nodes.end())
+
+			if (!m_dpNameIsNodeId)
 			{
-				dpname = res->second->getBrowseName();
+				auto res = m_nodes.find(nodeId);
+				if (res != m_nodes.end())
+				{
+					dpname = res->second->getBrowseName();
+				}
 			}
+
 			// Strip " from datapoint name
 			size_t pos;
 			while ((pos = dpname.find_first_of("\"")) != std::string::npos)
@@ -600,6 +610,7 @@ OPCUA::OPCUA() : m_publishPeriod(1000),
 				 m_connection(NULL),
 				 m_subscription(NULL),
 				 m_assetNaming(ASSET_NAME_SINGLE),
+				 m_dpNameIsNodeId(false),
 				 m_secMode(OpcUa_MessageSecurityMode_Invalid),
 				 m_dcfEnabled(false),
 				 m_dcfTriggerType(OpcUa_DataChangeTrigger_StatusValue),
@@ -645,6 +656,7 @@ void OPCUA::clearConfig()
 	m_metaDataName.clear();
 	m_includePathAsMetadata = false;
 	m_assetNaming = ASSET_NAME_SINGLE;
+	m_dpNameIsNodeId = false;
 	m_reportingInterval = 100;
 	m_publishPeriod = 1000;
 	m_maxKeepalive = 30;
@@ -706,14 +718,14 @@ void OPCUA::clearData()
  */
 bool OPCUA::isRegexValid(const std::string &regexp)
 {
-    try {
-        regex re(regexp);
-    }
-    catch (const std::regex_error& ex) {
+	try {
+		regex re(regexp);
+	}
+	catch (const std::regex_error& ex) {
 		Logger::getLogger()->error("RegEx parse error: %s", ex.what());
-        return false;
-    }
-    return true;
+		return false;
+	}
+	return true;
 }
 
 /**
@@ -743,6 +755,11 @@ void OPCUA::parseConfig(ConfigCategory &config)
 	if (config.itemExists("assetNaming"))
 	{
 		setAssetNaming(config.getValue("assetNaming"));
+	}
+
+	if (config.itemExists("datapointName"))
+	{
+		setDatapointNaming(config.getValue("datapointName"));
 	}
 
 	if (config.itemExists("reportingInterval"))
@@ -941,6 +958,40 @@ void OPCUA::parseConfig(ConfigCategory &config)
 	{
 		m_dcfDeadbandValue = std::stod(config.getValue("dcfDeadbandValue"));
 	}
+
+	/**
+	 * Updates the allowed control nodes list from the configuration.
+	 *
+	 * Clears the current allowed control nodes, retrieves the node list from the configuration,
+	 * and logs the updated allowed control nodes.
+	 */
+	if (config.itemExists("controlList"))
+	{
+		// Clear the current list of allowed control nodes
+		m_allowedControlNodes.clear();
+		m_nodeBuiltinIdCache.clear();
+
+		// Retrieve the control list from the configuration
+		auto controlList = config.getValueList("controlList");
+
+		std::ostringstream allowedControlNodesStream;
+
+		for (const auto &nodeId : controlList)
+		{
+			m_allowedControlNodes.insert(nodeId);
+			allowedControlNodesStream << nodeId << ", ";
+		}
+
+		std::string allowedControlNodesStr = allowedControlNodesStream.str();
+
+		// Remove the trailing ", " if the string is not empty
+		if (!allowedControlNodesStr.empty())
+		{
+			allowedControlNodesStr.erase(allowedControlNodesStr.size() - 2);
+		}
+
+		Logger::getLogger()->info("Allowed control nodes are: '%s'.", allowedControlNodesStr.c_str());
+	}
 }
 
 /**
@@ -1040,7 +1091,12 @@ void OPCUA::setTraceFile(const std::string &traceFile)
 {
 	if (traceFile == "True" || traceFile == "true" || traceFile == "TRUE")
 	{
-		string traceFilePath = getDataDir() + string("/logs/");
+		string logDirectory = getDataDir() + string("/logs");
+		if (access(logDirectory.c_str(), W_OK))
+		{
+			mkdir(logDirectory.c_str(), 0777);
+		}
+		string traceFilePath = getDataDir() + string("/logs/debug-trace/");
 		size_t len = traceFilePath.length();
 		m_traceFile = (char *)malloc(1 + len);
 		strncpy(m_traceFile, traceFilePath.c_str(), len);
@@ -1358,6 +1414,73 @@ int OPCUA::subscribe()
 }
 
 /**
+ * Asynchronous service response callback.
+ *
+ * Handles responses from asynchronous S2OPC services, specifically the WriteResponse in this case.
+ *
+ * @param encType     The type of the encodeable message received.
+ * @param response    A pointer to the response data.
+ * @param appContext  The application context passed to the asynchronous request.
+ */
+void OPCUA::asyncS2ResponseCallBack(SOPC_EncodeableType *encType, const void *response, uintptr_t appContext)
+{
+	// Check if the response is a WriteResponse
+	if (encType == &OpcUa_WriteResponse_EncodeableType)
+	{
+		// Cast the response to the appropriate type
+		const OpcUa_WriteResponse *writeResponse = (const OpcUa_WriteResponse *)response;
+		unsigned int handle = (unsigned int)appContext;
+		auto response = getPendingWriteResponse(handle);
+		std::string nodeIdStr = response.first;
+		std::string valueStr = response.second;
+		
+		removePendingWriteResponse(handle);
+
+		// Check the overall service result status
+		if (SOPC_IsGoodStatus(writeResponse->ResponseHeader.ServiceResult))
+		{
+			// Ensure there is exactly one result and check its status
+			if (writeResponse->NoOfResults == 1)
+			{
+				if (SOPC_IsGoodStatus(writeResponse->Results[0]))
+				{
+					Logger::getLogger()->debug("Write service succeeded for the node %s with value = %s.", nodeIdStr.c_str(), valueStr.c_str());
+				}
+				else
+				{
+					Logger::getLogger()->error("Write service failed for the node %s with value = %s, the value may not have been written to the server. Status: 0x%08" PRIX32,
+											   nodeIdStr.c_str(), valueStr.c_str(),
+											   writeResponse->Results[0]);
+				}
+			}
+			else
+			{
+				Logger::getLogger()->debug(
+					"Unexpected number of results in WriteResponse: %d for the node %s with value = %s", nodeIdStr.c_str(), valueStr.c_str(), writeResponse->NoOfResults);
+			}
+		}
+		else
+		{
+			Logger::getLogger()->error("Write service failed for the node %s with value = %s, the value may not have been written to the server. Status: 0x%08" PRIX32,
+									   nodeIdStr.c_str(), valueStr.c_str(),
+									   writeResponse->ResponseHeader.ServiceResult);
+		}
+	}
+	else if (encType == &OpcUa_ServiceFault_EncodeableType)
+	{
+		// Cast the response to the appropriate type
+		const OpcUa_ServiceFault *serviceFault = (const OpcUa_ServiceFault *)response;
+
+		Logger::getLogger()->debug("Service fault received with status: 0x%08" PRIX32, serviceFault->ResponseHeader.ServiceResult);
+	}
+	else
+	{
+		// Log and ignore other response types that are not handled by this callback
+		Logger::getLogger()->debug("Unhandled response type received in asyncS2ResponseCallBack.");
+	}
+}
+
+/**
  * Initialise the S2OPC Toolkit
  *
  * @param traceFilePath	Full path of the trace file. If NULL, do not create a trace file.
@@ -1398,6 +1521,14 @@ SOPC_ReturnStatus OPCUA::initializeS2sdk(const char *traceFilePath)
 			Logger::getLogger()->fatal("Unable to initialise S2OPC ClientHelper library");
 			throw runtime_error("Unable to initialise S2OPC ClientHelper library");
 		}
+
+		// Set asynchronous response callback
+        initStatus = SOPC_ClientConfigHelper_SetServiceAsyncResponse(asyncS2ResponseCallBack);
+        if (initStatus != SOPC_STATUS_OK)
+		{
+            Logger::getLogger()->fatal("Unable to register async callback in S2OPC ClientHelper library");
+            throw runtime_error("Unable to register async callback in S2OPC ClientHelper library");
+        }
 
 		Logger::getLogger()->debug("S2OPC Toolkit initialised");
 		m_init = true;
@@ -1482,6 +1613,262 @@ SOPC_ReturnStatus OPCUA::createS2Subscription()
 	}
 
 	return status;
+}
+
+/**
+ * Converts a string value to a SOPC_DataValue object based on the specified BuiltinId.
+ *
+ * @param builtinId  The OPC UA BuiltinId that determines the data type of the value.
+ * @param val        A string representation of the value to be converted.
+ * @return           Pointer to a SOPC_DataValue object on success, NULL on failure.
+ */
+SOPC_DataValue *OPCUA::toDataValue(SOPC_BuiltinId builtinId, const char *val)
+{
+    // Allocate and initialize the SOPC_DataValue structure
+    SOPC_DataValue *dv = (SOPC_DataValue *)SOPC_Calloc(1, sizeof(*dv));
+    if (dv == NULL)
+    {
+        Logger::getLogger()->error("Memory allocation failed for SOPC_DataValue.");
+        return NULL;
+    }
+    SOPC_DataValue_Initialize(dv);
+
+    dv->Value.BuiltInTypeId = builtinId;
+    dv->Value.ArrayType = SOPC_VariantArrayType_SingleValue;
+
+    bool parseSuccess = false; // Flag to track parsing success
+
+    // Parse the value based on the specified BuiltinId
+    switch (builtinId)
+    {
+    case SOPC_Boolean_Id:
+    case SOPC_Byte_Id:
+    {
+        unsigned char u8 = 0;
+        if (parseUnsignedInt(val, u8, std::numeric_limits<uint8_t>::max()))
+        {
+            parseSuccess = true;
+            if (builtinId == SOPC_Byte_Id)
+            {
+                dv->Value.Value.Byte = (SOPC_Byte)u8;
+            }
+            else
+            {
+                dv->Value.Value.Boolean = (SOPC_Boolean)u8;
+            }
+        }
+        break;
+    }
+    case SOPC_SByte_Id:
+    {
+        signed char i8 = 0;
+        if (parseSignedInt(val, i8, std::numeric_limits<int8_t>::min(), std::numeric_limits<int8_t>::max()))
+        {
+            parseSuccess = true;
+            dv->Value.Value.Sbyte = (SOPC_SByte)i8;
+        }
+        break;
+    }
+    case SOPC_Int16_Id:
+        parseSuccess = parseSignedInt(val, dv->Value.Value.Int16, std::numeric_limits<int16_t>::min(), std::numeric_limits<int16_t>::max());
+        break;
+    case SOPC_UInt16_Id:
+        parseSuccess = parseUnsignedInt(val, dv->Value.Value.Uint16, std::numeric_limits<uint16_t>::max());
+        break;
+    case SOPC_Int32_Id:
+        parseSuccess = parseSignedInt(val, dv->Value.Value.Int32, std::numeric_limits<int32_t>::min(), std::numeric_limits<int32_t>::max());
+        break;
+    case SOPC_UInt32_Id:
+        parseSuccess = parseUnsignedInt(val, dv->Value.Value.Uint32, std::numeric_limits<uint32_t>::max());
+        break;
+    case SOPC_Int64_Id:
+        parseSuccess = parseSignedInt(val, dv->Value.Value.Int64, std::numeric_limits<int64_t>::min(), std::numeric_limits<int64_t>::max());
+        break;
+    case SOPC_UInt64_Id:
+        parseSuccess = parseUnsignedInt(val, dv->Value.Value.Uint64, std::numeric_limits<uint64_t>::max());
+        break;
+    case SOPC_Float_Id:
+        parseSuccess = parseFloat(val, dv->Value.Value.Floatv);
+        break;
+    case SOPC_Double_Id:
+        parseSuccess = parseDouble(val, dv->Value.Value.Doublev);
+        break;
+    case SOPC_String_Id:
+    {
+        SOPC_String_Initialize(&dv->Value.Value.String);
+        if (SOPC_STATUS_OK == SOPC_String_CopyFromCString(&dv->Value.Value.String, val))
+        {
+            parseSuccess = true;
+        }
+        break;
+    }
+    default:
+        Logger::getLogger()->debug("Unsupported BuiltinId: %d. Unable to convert value '%s'", (int)builtinId, val);
+        break;
+    }
+
+    // Set the source timestamp for the value
+    dv->SourceTimestamp = SOPC_Time_GetCurrentTimeUTC();
+
+    // If parsing failed, clear and free the allocated memory
+    if (!parseSuccess)
+    {
+        Logger::getLogger()->debug("Failed to parse value '%s' for BuiltinId: %d", val, (int)builtinId);
+        SOPC_DataValue_Clear(dv);
+        SOPC_Free(dv);
+        return NULL;
+    }
+
+    return dv;
+}
+
+/**
+ * Reads the value of a given node and retrieves its BuiltinId and ArrayType.
+ *
+ * @param nodeIdStr          The node ID string of the node to read.
+ * @param outBuiltinTypeId   Pointer to store the BuiltinId of the node's value.
+ * @param outArrayType       Pointer to store the ArrayType of the node's value.
+ * @return                   True if the read operation is successful, false otherwise.
+ */
+bool OPCUA::read(const char *nodeIdStr, SOPC_BuiltinId *outBuiltinTypeId, SOPC_VariantArrayType *outArrayType)
+{
+	if (nodeIdStr == NULL || outBuiltinTypeId == NULL || outArrayType == NULL)
+	{
+		Logger::getLogger()->debug("Invalid input parameters for read operation.");
+		return false;
+	}
+
+	SOPC_ReturnStatus status = SOPC_STATUS_NOK;
+    OpcUa_ReadRequest *readRequest = SOPC_ReadRequest_Create(1, OpcUa_TimestampsToReturn_Neither);
+    OpcUa_ReadResponse *readResponse = NULL;
+
+	if (readRequest == NULL)
+	{
+        Logger::getLogger()->debug("Failed to create ReadRequest for node %s.", nodeIdStr);
+		return false;
+	}
+
+	status = SOPC_ReadRequest_SetReadValueFromStrings(readRequest, 0, nodeIdStr, SOPC_AttributeId_Value, NULL);
+	if (status != SOPC_STATUS_OK)
+	{
+        Logger::getLogger()->debug("Failed to set read value for node %s with attribute ID %u.", nodeIdStr, SOPC_AttributeId_Value);
+		SOPC_Encodeable_Delete(readRequest->encodeableType, (void **)&readRequest);
+		return false;
+	}
+
+	status = SOPC_ClientHelperNew_ServiceSync(m_connection, readRequest, (void **)&readResponse);
+	SOPC_Encodeable_Delete(readRequest->encodeableType, (void **)&readRequest);
+
+	if (status != SOPC_STATUS_OK || readResponse == NULL)
+	{
+        Logger::getLogger()->debug("Read service failed for node %s. Status: %d", nodeIdStr, (int)status);
+		return false;
+	}
+
+	if (SOPC_IsGoodStatus(readResponse->ResponseHeader.ServiceResult) &&
+		readResponse->NoOfResults == 1 &&
+		SOPC_IsGoodStatus(readResponse->Results[0].Status))
+	{
+		*outBuiltinTypeId = readResponse->Results[0].Value.BuiltInTypeId;
+		*outArrayType = readResponse->Results[0].Value.ArrayType;
+	}
+	else
+	{
+		Logger::getLogger()->debug("Failed to read node %s, StatusCode: 0x%08" PRIX32, nodeIdStr, readResponse->Results[0].Status);
+		status = SOPC_STATUS_NOK;
+	}
+
+	SOPC_Encodeable_Delete(readResponse->encodeableType, (void **)&readResponse);
+	return status == SOPC_STATUS_OK;
+}
+
+/**
+ * Writes a value to a specific node.
+ *
+ * @param nodeIdStr  The node ID string of the node to write to.
+ * @param valueStr   The value to write as a string.
+ * @return           True if the write operation is successful, false otherwise.
+ */
+bool OPCUA::write(const std::string &nodeIdStr, const std::string &valueStr)
+{
+	if (nodeIdStr.empty())
+	{
+		Logger::getLogger()->error("Node ID is empty. Unable to proceed with the write operation.");
+		return false;
+	}
+
+	if (valueStr.empty())
+	{
+		Logger::getLogger()->error("Value is empty. Unable to proceed with the write operation for node %s.", nodeIdStr.c_str());
+		return false;
+	}
+
+    Logger::getLogger()->debug("Initiating write request for node '%s' with value '%s'", nodeIdStr.c_str(), valueStr.c_str());
+
+	if (m_allowedControlNodes.count(nodeIdStr) == 0)
+	{
+		Logger::getLogger()->error("Write operation not allowed for node %s. This node is not in the list of allowed control nodes.", nodeIdStr.c_str());
+		return false;
+	}
+
+	SOPC_BuiltinId builtinTypeId = SOPC_Null_Id;
+	SOPC_VariantArrayType arrayType = SOPC_VariantArrayType_SingleValue;
+
+	if (m_nodeBuiltinIdCache.count(nodeIdStr) == 0)
+	{
+		Logger::getLogger()->debug("Node %s not found in cache. Attempting to read node details.", nodeIdStr.c_str());
+		
+		if (!read(nodeIdStr.c_str(), &builtinTypeId, &arrayType))
+		{
+			Logger::getLogger()->error("Failed to read node %s details. Unable to write value '%s' to the node.", nodeIdStr.c_str(), valueStr.c_str());
+			return false;
+		}
+
+		m_nodeBuiltinIdCache[nodeIdStr] = builtinTypeId;
+	}
+	else
+	{
+		builtinTypeId = m_nodeBuiltinIdCache[nodeIdStr];
+		Logger::getLogger()->debug("Node %s found in the cache with BuiltinId: %d.", nodeIdStr.c_str(), (int)builtinTypeId);
+	}
+
+	SOPC_DataValue *writeValue = toDataValue(builtinTypeId, valueStr.c_str());
+
+	if (writeValue == NULL)
+	{
+		Logger::getLogger()->error("Failed to convert value '%s' to the expected type for node '%s'.", valueStr.c_str(), nodeIdStr.c_str());
+		return false;
+	}
+
+	OpcUa_WriteRequest *writeRequest = SOPC_WriteRequest_Create(1);
+	if (writeRequest == NULL)
+	{
+		Logger::getLogger()->debug("Failed to create WriteRequest for node %s with value %s.", nodeIdStr.c_str(), valueStr.c_str());
+		SOPC_DataValue_Clear(writeValue);
+		SOPC_Free(writeValue);
+		return false;
+	}
+
+	SOPC_ReturnStatus status = SOPC_WriteRequest_SetWriteValueFromStrings(
+		writeRequest, 0, nodeIdStr.c_str(), SOPC_AttributeId_Value, NULL, writeValue);
+
+	SOPC_DataValue_Clear(writeValue);
+	SOPC_Free(writeValue);
+
+	if (status != SOPC_STATUS_OK)
+	{
+		Logger::getLogger()->debug("Failed to set write value for node %s with value %s.", nodeIdStr.c_str(), valueStr.c_str());
+		SOPC_Encodeable_Delete(writeRequest->encodeableType, (void **)&writeRequest);
+		return false;
+	}
+
+	unsigned int handle = getNewRequestHandle();
+
+	addPendingWriteResponse(handle, nodeIdStr, valueStr);
+
+	status = SOPC_ClientHelperNew_ServiceAsync(m_connection, writeRequest, handle);
+
+	return status == SOPC_STATUS_OK;
 }
 
 /**
@@ -2853,31 +3240,47 @@ void OPCUA::setAssetNaming(const string &scheme)
 }
 
 /**
- * Resolve duplicate browse names within nodes, if the naming
+ * Resolve duplicate Browse Names within nodes, if the naming
  * scheme we are using includes the parent object name in the
  * naming we ignore duplicates as they are always going to have
- * different parent nodes.
+ * different parent nodes. There is no need to resolve Browse
+ * Names if Node Ids are to be used as Datapoint names.
  */
 void OPCUA::resolveDuplicateBrowseNames()
 {
-	if (m_assetNaming == ASSET_NAME_SINGLE_OBJ || m_assetNaming == ASSET_NAME_OBJECT)
+	if (m_assetNaming == ASSET_NAME_SINGLE_OBJ || m_assetNaming == ASSET_NAME_OBJECT || m_dpNameIsNodeId)
 	{
 		return;
 	}
-	for (auto it = m_nodes.begin(); it != m_nodes.end(); ++it)
+
+	// Create a temporary map of Browse Name to a set of pointers to OPCUA::Nodes that have that Name
+	std::map<std::string, std::set<OPCUA::Node *>> browseNameMap;
+
+	// Load the browseNameMap with the Browse Names and OPCUA::Node pointers in the 'm_nodes' master list
+	for (auto node : m_nodes)
 	{
-		string b1 = it->second->getBrowseName();
-		auto it2 = ++it;
-		it--;
-		while (it2 != m_nodes.end())
+		try
 		{
-			string b2 = it2->second->getBrowseName();
-			if (b1.compare(b2) == 0)
+			browseNameMap.at(node.second->getBrowseName()).insert(node.second);
+		}
+		catch (const std::out_of_range &e)
+		{
+			std::set<OPCUA::Node *> newSet;
+			newSet.insert(node.second);
+			browseNameMap.emplace(std::pair<std::string, std::set<OPCUA::Node *>>(node.second->getBrowseName(), newSet));
+		}
+	}
+
+	// If a Browse Name is exposed by more than one OPCUA::Node,
+	// apply the Browse Name disambiguation to all of the OPCUA::Node instances
+	for (auto browseNameMapItem : browseNameMap)
+	{
+		if (browseNameMapItem.second.size() > 1)
+		{
+			for (OPCUA::Node *opcuaNode : browseNameMapItem.second)
 			{
-				it->second->duplicateBrowseName();
-				it2->second->duplicateBrowseName();
+				opcuaNode->duplicateBrowseName();
 			}
-			it2++;
 		}
 	}
 }
@@ -2966,4 +3369,53 @@ bool OPCUA::writeS2ConfigXML(const std::string &xmlFileName, const OPCUASecurity
 	fclose(f);
 
 	return true;
+}
+
+/**
+ * Create new request handle
+ * 
+ * @return	New request handle
+ */
+unsigned int OPCUA::getNewRequestHandle()
+{
+	return requestHandle++;
+}
+
+/**
+ * Add a pending read response to the list
+ *
+ * @param requestHandle	Request handle
+ * @param response		Read response
+ */
+void OPCUA::addPendingWriteResponse(unsigned int requestHandle, const std::string &nodeIdStr, const std::string &value)
+{
+	pendingWriteResponses[requestHandle] = make_pair(nodeIdStr, value);
+}
+
+/**
+ * Get a pending write response from the list
+ *
+ * @param requestHandle	Request handle
+ * @return				Write response
+ */
+std::pair<std::string, std::string> OPCUA::getPendingWriteResponse(unsigned int requestHandle)
+{
+	std::pair<std::string, std::string> response{ "", "" };
+	auto it = pendingWriteResponses.find(requestHandle);
+	if (it != pendingWriteResponses.end())
+	{
+		response = it->second;
+		pendingWriteResponses.erase(it);
+	}
+	return response;
+}
+
+/**
+ * Remove a pending write response from the list
+ *
+ * @param requestHandle	Request handle
+ */
+void OPCUA::removePendingWriteResponse(unsigned int requestHandle)
+{
+	pendingWriteResponses.erase(requestHandle);
 }
