@@ -70,7 +70,7 @@ tar xf check-0.15.2.tar.gz
 git clone https://gitlab.com/systerel/S2OPC.git --branch S2OPC_Toolkit_1.5.0 --depth 1
 (
 	cd S2OPC
-	BUILD_SHARED_LIBS=1 CMAKE_INSTALL_PREFIX=/usr/local ./build.sh
+	BUILD_SHARED_LIBS=1 CMAKE_INSTALL_PREFIX=/usr/local WARNINGS_AS_ERRORS=OFF ./build.sh
 	echo
 	echo "BUILD done, INSTALLING..."
 	echo
