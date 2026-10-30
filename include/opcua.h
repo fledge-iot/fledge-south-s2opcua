@@ -135,7 +135,7 @@ class OPCUA
 	bool				updateS2parameters();
 	SOPC_ReturnStatus	createS2Subscription();
 	SOPC_ReturnStatus	deleteS2Subscription();
-	SOPC_ReturnStatus	createS2MonitoredItems(char *const *nodeIds, const size_t numNodeIds, bool logRevisions, size_t *numErrors);
+	SOPC_ReturnStatus	createS2MonitoredItems(char *const *nodeIds, const size_t numNodeIds, bool logRevisions, size_t *numErrors, std::vector<std::string> *retryNodeIds = NULL);
 	void			browseVariables(const std::string& nodeId, std::vector<std::string>&);
 	void			browseObjects(const std::string& nodeId, std::set<string> &objectNodeIds);
 	void            getNodeFullPath(const std::string &nodeId, std::string& path);
