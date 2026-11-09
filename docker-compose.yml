@@ -1,0 +1,77 @@
+# Run the s2opcua south plugin from this checkout in Fledge, against an OPC UA test server.
+#
+#   docker compose up --build -d          # first build compiles S2OPC and takes a while
+#   docker compose logs -f fledge         # Fledge and plugin logs
+#   docker compose run --rm provision     # re-apply the plugin configuration after changing it below
+#   docker compose down -v                # stop and delete all data
+#
+# Fledge REST API: http://localhost:8081/fledge/ping
+# Readings:        http://localhost:8081/fledge/asset
+#
+# The plugin configuration is set by the "provision" service from the OPCUA_* variables,
+# which can be overridden in a .env file next to this one. For example, to test username
+# authentication with an encrypted password on an unsecured channel:
+#   OPCUA_AUTH=username
+# or a secure channel:
+#   OPCUA_SECURITY_MODE=SignAndEncrypt
+#   OPCUA_SECURITY_POLICY=Basic256Sha256
+name: fledge-s2opcua
+
+services:
+  fledge:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+      args:
+        FLEDGE_VERSION: ${FLEDGE_VERSION:-3.1.1}
+    image: fledge-s2opcua:dev
+    ports:
+      - "${FLEDGE_PORT:-8081}:8081"
+    volumes:
+      - fledge-data:/usr/local/fledge/data
+
+  # Microsoft OPC PLC simulation server (https://github.com/Azure-Samples/iot-edge-opc-plc)
+  opcplc:
+    image: mcr.microsoft.com/iotedge/opc-plc:${OPCPLC_VERSION:-latest}
+    hostname: opcplc
+    # The image runs as uid 1654, which cannot write to the root-owned named volume for its PKI
+    user: "0:0"
+    command:
+      - --pn=50000
+      - --ph=opcplc
+      - --autoaccept
+      - --unsecuretransport
+      - --defaultuser=${OPCUA_USERNAME:-user1}
+      - --defaultpassword=${OPCUA_PASSWORD:-password}
+    ports:
+      - "${OPCPLC_PORT:-50000}:50000"
+    volumes:
+      - opcplc-pki:/app/pki
+
+  # One-shot: creates or updates the "opcua" south service in Fledge
+  provision:
+    image: alpine:3.20
+    depends_on:
+      fledge:
+        condition: service_healthy
+      opcplc:
+        condition: service_started
+    environment:
+      OPCUA_URL: opc.tcp://opcplc:50000
+      OPCUA_SUBSCRIPTIONS: ${OPCUA_SUBSCRIPTIONS:-ns=3;s=Basic}
+      OPCUA_SECURITY_MODE: ${OPCUA_SECURITY_MODE:-None}
+      OPCUA_SECURITY_POLICY: ${OPCUA_SECURITY_POLICY:-None}
+      OPCUA_AUTH: ${OPCUA_AUTH:-anonymous}
+      OPCUA_USERNAME: ${OPCUA_USERNAME:-user1}
+      OPCUA_PASSWORD: ${OPCUA_PASSWORD:-password}
+    volumes:
+      - fledge-data:/fledge-data
+      - opcplc-pki:/opcplc-pki:ro
+      - ./docker/provision.sh:/provision.sh:ro
+    # Strip CR in case of a Windows checkout with CRLF line endings
+    entrypoint: ["sh", "-c", "sed 's/\\r$$//' /provision.sh | sh"]
+    restart: "no"
+
+volumes:
+  fledge-data:
+  opcplc-pki:

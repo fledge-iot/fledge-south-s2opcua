@@ -1,0 +1,14 @@
+.git
+.github
+build
+tests/CMakeFiles
+tests/CMakeCache.txt
+# Outputs of requirements.sh when run in the checkout
+S2OPC
+libexpat
+check-0.15.2
+check-0.15.2.tar.gz
+mbedtls-2.28.7
+v2.28.7.tar.gz
+docker-compose.yml
+.env

@@ -261,7 +261,7 @@ The OPC UA Security tab contains a set of configuration items that is used for s
     +-----------+
 
   - **Username**: Specify the username to use for authentication. This is only used if the *User authentication policy* is set to *username*.
-    If you choose this policy, you must select a Security Policy other than None.
+    If you choose this policy, you must also configure the *Server Public Certificate*, *Client Public Certificate* and *Client Private Key* so that the password can be encrypted.
     See the section Username Authentication below.
 
   - **Password**: Specify the password to use for authentication. This is only used if the *User authentication policy* is set to *username*.
@@ -269,13 +269,15 @@ The OPC UA Security tab contains a set of configuration items that is used for s
   - **CA Certificate Authority**: The name of the root certificate authorities certificate file in DER format. This is the certificate authority that forms the root of trust and signs the certificates that will be trusted. If using self-signed certificates this should be left blank.
 
   - **Server Public Certificate**: The name of the public certificate of the OPC UA server specified in the *OPC UA Server URL*. This must be a DER format certificate file. It must be signed by the certificate authority unless you are using self-signed certificates.
+    This certificate is also required for *username* authentication, even if the Security Mode is *None*, because it is used to encrypt the password.
+    The OPC UA server must be configured to send only its own certificate, not its certificate chain, because the underlying S2OPC library does not support certificate chains.
+    If the server sends a certificate chain, the plugin logs an error explaining this.
 
   - **Client Public Certificate**: The name of the public certificate of the OPC UA client application, that is, this plugin. This must be a DER format certificate file. It must be signed by the certificate authority unless you are using self-signed certificates.
 
   - **Client Private Key**: The name of the private key of the client application, that is, the private key the plugin will use. This must be a PEM format key file.
 
   - **Certificate Revocation List**: The name of the certificate authority's Certificate Revocation List. This is a DER format certificate. If using self-signed certificates this should be left blank.
-
 Control List
 ------------
 
@@ -359,26 +361,31 @@ You can copy the NodeIds to configure the *OPC UA Node Subscriptions* on the :re
 Username Authentication
 -----------------------
 
-If you set the User Authentication Policy to username, you must select a Security Policy other than *None* to communicate with the OPC UA Server.
-Allowing *username* with *None* would mean that usernames and passwords would be passed from the plugin to the server as clear text which is a serious security risk.
+If you set the User Authentication Policy to username, the plugin never sends the password to the OPC UA server as clear text.
 This is explained in the `OPC UA Specification Part 4, Section 7.36.4 <https://reference.opcfoundation.org/Core/Part4/v104/docs/7.36.4>`_.
+You must configure the *Server Public Certificate*, *Client Public Certificate* and *Client Private Key*, even if the Security Mode is *None*,
+because the underlying S2OPC library needs them to encrypt the password.
 
 Each OPC UA server endpoint includes a list of UserIdentityTokens it will accept such as anonymous, username or certificate.
-Each UserIdentityToken has its own Security Policy.
-The S2OPC South plugin requires the configured Security Policy for the connection to match the Security Policy for the UserIdentityToken.
+Each UserIdentityToken has its own Security Policy which is used to encrypt the password.
+As described in the `OPC UA Specification Part 4, Section 7.41 <https://reference.opcfoundation.org/Core/Part4/v105/docs/7.41>`_,
+if a UserIdentityToken does not specify a Security Policy, the Security Policy of the endpoint is used.
+The UserIdentityToken Security Policy may be different from the Security Policy of the endpoint.
+For example, a server may offer an endpoint with Security Mode *None* that accepts a username whose password is encrypted with *Basic256Sha256*.
+The plugin supports the UserIdentityToken Security Policies *None*, *Basic256*, *Basic256Sha256*, *Aes128_Sha256_RsaOaep* and *Aes256_Sha256_RsaPss*.
 
-If your configuration fails to find a matching endpoint, it could be because the required UserIdentityToken Security Policy does not match your configuration.
-To diagnose this, set the Minimum Log Level to *Debug* in the Advanced Configuration page of the Fledge GUI.
-After starting the plugin, you will see Debug messages documenting the endpoint search.
-If Security Policy mismatch is the problem, you will see a message like:
+The plugin will not select a UserIdentityToken whose Security Policy is *None* unless the Security Mode is *SignAndEncrypt*,
+because the password would otherwise be passed from the plugin to the server as clear text which is a serious security risk.
+
+If your configuration fails to find a matching endpoint, set the Minimum Log Level to *Debug* in the Advanced Configuration page of the Fledge GUI.
+After starting the plugin, you will see Debug messages documenting the endpoint search, including the Security Policy of each UserIdentityToken offered by the server.
+When an endpoint is matched, the plugin logs the Security Policy used for the UserIdentityToken:
 
 .. code-block:: console
 
-   DEBUG: 0: Security Policy mismatch: Endpoint: 'http://opcfoundation.org/UA/SecurityPolicy#Basic256Sha256' UserIdentityToken: 'http://opcfoundation.org/UA/SecurityPolicy#Basic256' (username_basic256)(1)
+   INFO: Matched Endpoint: Security Mode 'None', Security Policy 'http://opcfoundation.org/UA/SecurityPolicy#None', Authentication policy 'username_basic256sha256', User Token Security Policy 'http://opcfoundation.org/UA/SecurityPolicy#Basic256Sha256'
 
-This message says that the configured Security Policy for the connection is *Basic256Sha256* but the required policy for the UserIdentityToken is *Basic256*.
-To fix this, set the Security Policy for the connection to *Basic256* in the Fledge GUI.
-The string *username_basic256* in this example is the OPC UA server's name for the UserIdentityToken.
+The string *username_basic256sha256* in this example is the OPC UA server's name for the UserIdentityToken.
 This name does not affect configuration.
 
 Certificate Management
@@ -412,7 +419,7 @@ Certificates must be X509 Version 3 certificates and must have the following fie
    * - Subject
      - This field must include a Common Name (*CN=*) which is a human-readable name such as *S2OPCUA South Plugin*. Do not use your device hostname.
    * - Subject Alternative Name
-     - URI= fledge:south:s2opcua, DNS= *deviceHostname*
+     - URI= fledge.south.s2opcua, DNS= *deviceHostname*. The URI must be exactly *fledge.south.s2opcua* because this is the Application URI the plugin sends to the OPC UA server.
    * - Key Usage
      - Digital Signature, Key Encipherment, Non Repudiation, Data Encipherment
    * - Extended Key Usage
@@ -464,7 +471,7 @@ This can be an unqualified name, that is, the device hostname without domain nam
 Click *Add*.
 
 Set the drop-down to *URI*.
-Enter *fledge:south:s2opcua*.
+Enter *fledge.south.s2opcua*.
 Click *Add*.
 
 x509v3 Extensions
