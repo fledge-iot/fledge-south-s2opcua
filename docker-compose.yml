@@ -31,8 +31,9 @@ services:
       - fledge-data:/usr/local/fledge/data
 
   # Microsoft OPC PLC simulation server (https://github.com/Azure-Samples/iot-edge-opc-plc)
+  # Pinned to the version the plugin was tested with; override with OPCPLC_VERSION in .env
   opcplc:
-    image: mcr.microsoft.com/iotedge/opc-plc:${OPCPLC_VERSION:-latest}
+    image: mcr.microsoft.com/iotedge/opc-plc:${OPCPLC_VERSION:-2.12.48}
     hostname: opcplc
     # The image runs as uid 1654, which cannot write to the root-owned named volume for its PKI
     user: "0:0"

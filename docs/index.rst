@@ -377,6 +377,21 @@ The plugin supports the UserIdentityToken Security Policies *None*, *Basic256*, 
 The plugin will not select a UserIdentityToken whose Security Policy is *None* unless the Security Mode is *SignAndEncrypt*,
 because the password would otherwise be passed from the plugin to the server as clear text which is a serious security risk.
 
+If an endpoint offers several username UserIdentityTokens, the plugin prefers a token protected with the Security Policy of the endpoint,
+either because the token does not specify a Security Policy or because it specifies the same one.
+Only if there is no such token does the plugin select the first token protected with another supported Security Policy, and it logs a warning when it does so.
+
+Upgrading from earlier versions
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Earlier versions of the plugin could send the password as clear text. Some configurations that connected with earlier versions will now fail to connect:
+
+- A configuration with Security Mode *None* and username authentication, against a server whose username token has Security Policy *None* (or no Security Policy),
+  now fails at endpoint matching with an error that the password would be sent in clear text.
+  Change the Security Mode to *SignAndEncrypt*, or configure the OPC UA server to offer a username token protected with a Security Policy such as *Basic256Sha256*.
+- Username authentication now requires the *Server Public Certificate*, *Client Public Certificate* and *Client Private Key* in every Security Mode, including *None*.
+  Upload these to the Fledge Certificate Store and configure them before upgrading.
+
 If your configuration fails to find a matching endpoint, set the Minimum Log Level to *Debug* in the Advanced Configuration page of the Fledge GUI.
 After starting the plugin, you will see Debug messages documenting the endpoint search, including the Security Policy of each UserIdentityToken offered by the server.
 When an endpoint is matched, the plugin logs the Security Policy used for the UserIdentityToken:

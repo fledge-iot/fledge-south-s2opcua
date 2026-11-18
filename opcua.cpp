@@ -24,6 +24,10 @@
 #include <fstream>
 #include <iterator>
 #include <vector>
+#include <security_select.h>
+
+static_assert(USER_TOKEN_TYPE_ANONYMOUS == (int)OpcUa_UserTokenType_Anonymous, "UserTokenType mismatch");
+static_assert(USER_TOKEN_TYPE_USERNAME == (int)OpcUa_UserTokenType_UserName, "UserTokenType mismatch");
 
 using namespace std;
 
@@ -245,38 +249,6 @@ static OpcUa_UserTokenType PolicyIdToUserTokenType(const char *policyId)
 }
 
 /**
- * Determine whether a Security Policy URI is supported by the S2OPC Toolkit
- * for the protection of a UserIdentityToken
- *
- * @param policyUri	Security Policy URI
- * @return			True if the Security Policy is supported
- */
-static bool IsSupportedSecurityPolicyUri(const char *policyUri)
-{
-	if (policyUri == NULL)
-	{
-		return false;
-	}
-
-	static const char *supported[] = {
-		SOPC_SecurityPolicy_None_URI,
-		SOPC_SecurityPolicy_Basic256_URI,
-		SOPC_SecurityPolicy_Basic256Sha256_URI,
-		SOPC_SecurityPolicy_Aes128Sha256RsaOaep_URI,
-		SOPC_SecurityPolicy_Aes256Sha256RsaPss_URI
-	};
-
-	for (const char *uri : supported)
-	{
-		if (strcmp(policyUri, uri) == 0)
-		{
-			return true;
-		}
-	}
-	return false;
-}
-
-/**
  * Escape a string for use as an XML attribute value
  *
  * @param value	String to escape
@@ -314,47 +286,6 @@ static std::string XmlEscape(const std::string &value)
 }
 
 /**
- * Return the total length of the first DER encoded SEQUENCE in a buffer
- *
- * @param data		Buffer holding DER data
- * @param length	Length of the buffer
- * @return			Length of the first SEQUENCE including its header, or zero if the data is not valid DER
- */
-static size_t DerSequenceLength(const uint8_t *data, size_t length)
-{
-	if (data == NULL || length < 2 || data[0] != 0x30)
-	{
-		return 0;
-	}
-
-	size_t headerLength = 2;
-	size_t contentLength = 0;
-	if (data[1] < 0x80)
-	{
-		contentLength = data[1];
-	}
-	else
-	{
-		size_t numLengthBytes = data[1] & 0x7F;
-		if (numLengthBytes == 0 || numLengthBytes > 4 || length < 2 + numLengthBytes)
-		{
-			return 0;
-		}
-		for (size_t i = 0; i < numLengthBytes; i++)
-		{
-			contentLength = (contentLength << 8) | data[2 + i];
-		}
-		headerLength += numLengthBytes;
-	}
-
-	if (contentLength > length - headerLength)
-	{
-		return 0;
-	}
-	return headerLength + contentLength;
-}
-
-/**
  * Check the OPC UA server certificate published in the matched Endpoint.
  *
  * OPC UA Part 6, 6.2.3 allows a server to send its certificate followed by its certificate chain.
@@ -373,36 +304,30 @@ static void CheckServerCertificate(const SOPC_ByteString *endpointCert, const st
 		return;
 	}
 
-	const uint8_t *data = endpointCert->Data;
+	std::vector<uint8_t> configured;
+	if (!configuredCertPath.empty())
+	{
+		std::ifstream file(configuredCertPath, std::ios::binary);
+		configured.assign(std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>());
+	}
+
 	size_t length = (size_t)endpointCert->Length;
-	size_t certLength = DerSequenceLength(data, length);
-	if (certLength == 0)
+	ServerCertificateCheck check = CheckServerCertificateData(endpointCert->Data, length, configured);
+	if (!check.valid)
 	{
 		logger->warn("The OPC UA server certificate in the endpoint description is not a valid DER certificate");
 		return;
 	}
 
-	if (certLength < length)
+	if (check.chain)
 	{
 		logger->error("The OPC UA server sends its certificate with a certificate chain (%lu bytes, of which the server certificate is %lu bytes). "
 					  "The S2OPC library does not support certificate chains and will reject the connection with BadCertificateInvalid (S2OPC issue #1448). "
 					  "Configure the OPC UA server to send only its application instance certificate",
-					  (unsigned long)length, (unsigned long)certLength);
+					  (unsigned long)length, (unsigned long)check.certLength);
 	}
 
-	if (configuredCertPath.empty())
-	{
-		return;
-	}
-
-	std::ifstream file(configuredCertPath, std::ios::binary);
-	std::vector<uint8_t> configured((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
-	if (configured.empty())
-	{
-		return;
-	}
-
-	if (configured.size() != certLength || memcmp(configured.data(), data, certLength) != 0)
+	if (check.mismatch)
 	{
 		logger->error("The configured Server Public Certificate %s does not match the certificate of the OPC UA server. "
 					  "Check that it is the server's current certificate in DER format",
@@ -2435,11 +2360,15 @@ void OPCUA::start()
 			bool matchedMode = false;
 			bool matchedPolicyURL = false;
 			bool matchedPolicyId = false;
+			bool unsupportedTokenPolicy = false;
 			const OpcUa_UserTokenType tokenType = PolicyIdToUserTokenType(security.userPolicyId);
-			std::string userTokenPolicyUri;
+			const bool signAndEncrypt = (security.security_mode == OpcUa_MessageSecurityMode_SignAndEncrypt);
+			UserTokenSelection selection;
 			int32_t matchedEndpoint = -1;
 
-			for (int32_t i = 0; i < endpoints->NoOfEndpoints && matched == false; i++)
+			// Prefer an Endpoint with a UserTokenPolicy protected by the Endpoint's own Security Policy.
+			// Fall back to the first Endpoint with a token protected by another supported Security Policy.
+			for (int32_t i = 0; i < endpoints->NoOfEndpoints; i++)
 			{
 				OpcUa_EndpointDescription *endpoint = &endpoints->Endpoints[i];
 
@@ -2462,52 +2391,56 @@ void OPCUA::start()
 				matchedPolicyURL = true;
 
 				logger->debug("Endpoint %d: checking user ID tokens", i);
+				std::vector<UserTokenPolicyInfo> tokens;
 				OpcUa_UserTokenPolicy *userIds = endpoint->UserIdentityTokens;
-				for (int32_t j = 0; matched == false && j < endpoint->NoOfUserIdentityTokens; j++)
+				for (int32_t j = 0; j < endpoint->NoOfUserIdentityTokens; j++)
 				{
-					if (userIds[j].TokenType != tokenType)
-					{
-						logger->debug("Endpoint %d token %d: token type %d does not match %d (%s)",
-									  i, j, (int)userIds[j].TokenType, (int)tokenType, SOPC_String_GetRawCString(&userIds[j].PolicyId));
-						continue;
-					}
+					UserTokenPolicyInfo token;
+					token.tokenType = (int)userIds[j].TokenType;
+					if (userIds[j].PolicyId.Length > 0)
+						token.policyId = SOPC_String_GetRawCString(&userIds[j].PolicyId);
+					if (userIds[j].SecurityPolicyUri.Length > 0)
+						token.securityPolicyUri = SOPC_String_GetRawCString(&userIds[j].SecurityPolicyUri);
+					logger->debug("Endpoint %d token %d: PolicyId '%s', token type %d, Security Policy '%s'",
+								  i, j, token.policyId.c_str(), token.tokenType, token.securityPolicyUri.c_str());
+					tokens.push_back(token);
+				}
 
-					// Part 4, 7.41: if the UserTokenPolicy SecurityPolicyUri is null or empty,
-					// the SecurityPolicy of the Endpoint is used to protect the token.
-					// Otherwise the token is protected with its own SecurityPolicy, which may differ from the Endpoint's.
-					const char *tokenPolicy = (userIds[j].SecurityPolicyUri.Length > 0)
-												  ? SOPC_String_GetRawCString(&userIds[j].SecurityPolicyUri)
-												  : security.security_policy;
+				UserTokenSelection candidate = SelectUserToken(tokens, (int)tokenType, security.security_policy, signAndEncrypt);
+				passwordInClearText = passwordInClearText || candidate.rejectedClearText;
+				unsupportedTokenPolicy = unsupportedTokenPolicy || candidate.rejectedUnsupported;
+				if (candidate.index < 0)
+				{
+					logger->debug("Endpoint %d: no usable user ID token", i);
+					continue;
+				}
 
-					if (tokenType == OpcUa_UserTokenType_UserName)
-					{
-						if (!IsSupportedSecurityPolicyUri(tokenPolicy))
-						{
-							logger->debug("Endpoint %d token %d (%s): UserIdentityToken Security Policy '%s' is not supported",
-										  i, j, SOPC_String_GetRawCString(&userIds[j].PolicyId), tokenPolicy);
-							continue;
-						}
-
-						// A UserNameIdentityToken protected with SecurityPolicy None is not encrypted.
-						// Only accept it if the Secure Channel itself encrypts all messages.
-						if (strcmp(tokenPolicy, SOPC_SecurityPolicy_None_URI) == 0 &&
-							security.security_mode != OpcUa_MessageSecurityMode_SignAndEncrypt)
-						{
-							logger->debug("Endpoint %d token %d (%s): skipped, the password would be sent in clear text",
-										  i, j, SOPC_String_GetRawCString(&userIds[j].PolicyId));
-							passwordInClearText = true;
-							continue;
-						}
-					}
-
-					matchedPolicyId = true;
-					SOPC_Free((void *)security.userPolicyId);
-					security.userPolicyId = SOPC_String_GetCString(&userIds[j].PolicyId); // Policy Id must match the OPC UA server's name for it
-					security.tokenType = userIds[j].TokenType;
-					userTokenPolicyUri = tokenPolicy;
-					logger->debug("Endpoint %d matches on PolicyId '%s' (%s)(%d)", i, security.userPolicyId, tokenPolicy, (int)userIds[j].TokenType);
+				if (matchedEndpoint < 0 || (candidate.exactPolicyMatch && !selection.exactPolicyMatch))
+				{
+					selection = candidate;
 					matchedEndpoint = i;
-					matched = true;
+				}
+				if (selection.exactPolicyMatch)
+				{
+					break;
+				}
+			}
+
+			if (matchedEndpoint >= 0)
+			{
+				OpcUa_UserTokenPolicy *userId = &endpoints->Endpoints[matchedEndpoint].UserIdentityTokens[selection.index];
+				matchedPolicyId = true;
+				matched = true;
+				SOPC_Free((void *)security.userPolicyId);
+				security.userPolicyId = SOPC_String_GetCString(&userId->PolicyId); // Policy Id must match the OPC UA server's name for it
+				security.tokenType = userId->TokenType;
+				logger->debug("Endpoint %d matches on PolicyId '%s' (%s)(%d)", matchedEndpoint, security.userPolicyId,
+							  selection.effectivePolicyUri.c_str(), (int)security.tokenType);
+				if (security.tokenType == OpcUa_UserTokenType_UserName && !selection.exactPolicyMatch)
+				{
+					logger->warn("The OPC UA server offers no username token protected with the endpoint's Security Policy %s. "
+								 "The password is protected with Security Policy %s",
+								 security.security_policy, selection.effectivePolicyUri.c_str());
 				}
 			}
 			if (!matched)
@@ -2522,6 +2455,8 @@ void OPCUA::start()
 				if (!matchedPolicyId)
 					logger->error("There are no endpoints that match the Authentication policy %s",
 								  m_authPolicy.c_str());
+				if (unsupportedTokenPolicy)
+					logger->error("The OPC UA server offers username tokens with Security Policies that the S2OPC library does not support");
 				if (passwordInClearText)
 					logger->error("The OPC UA server offers username authentication only without password encryption on this endpoint. "
 								  "Use Security Mode 'SignAndEncrypt' to protect the password");
@@ -2530,7 +2465,7 @@ void OPCUA::start()
 			{
 				logger->info("Matched Endpoint: Security Mode '%s', Security Policy '%s', Authentication policy '%s', User Token Security Policy '%s'",
 							 securityMode(security.security_mode).c_str(), security.security_policy, security.userPolicyId,
-							 userTokenPolicyUri.c_str());
+							 selection.effectivePolicyUri.c_str());
 
 				// The server certificate is used for a secure channel and to encrypt a username password
 				if (security.security_mode != OpcUa_MessageSecurityMode_None || security.tokenType == OpcUa_UserTokenType_UserName)
