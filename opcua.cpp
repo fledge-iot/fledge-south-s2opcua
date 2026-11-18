@@ -2436,7 +2436,8 @@ void OPCUA::start()
 				security.tokenType = userId->TokenType;
 				logger->debug("Endpoint %d matches on PolicyId '%s' (%s)(%d)", matchedEndpoint, security.userPolicyId,
 							  selection.effectivePolicyUri.c_str(), (int)security.tokenType);
-				if (security.tokenType == OpcUa_UserTokenType_UserName && !selection.exactPolicyMatch)
+				if (security.tokenType == OpcUa_UserTokenType_UserName && !selection.exactPolicyMatch &&
+					strcmp(security.security_policy, SOPC_SecurityPolicy_None_URI) != 0)
 				{
 					logger->warn("The OPC UA server offers no username token protected with the endpoint's Security Policy %s. "
 								 "The password is protected with Security Policy %s",
