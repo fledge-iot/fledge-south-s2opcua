@@ -1378,7 +1378,7 @@ int OPCUA::subscribe()
 	i = 0;
 	bool logRevisions = true;
 	bool done = false;
-	std::vector<std::string> retryNodeIds;
+	std::vector<char *> retryNodeIds;
 	do
 	{
 		size_t numNodeIdsToAdd = miBlockSize;
@@ -1401,41 +1401,57 @@ int OPCUA::subscribe()
 
 	} while (!done && !m_stopped.load() && (status == SOPC_STATUS_OK));
 
+	if (status == SOPC_STATUS_OK)
+	{
+		m_readyForData.store(true);
+		m_tstart = time(0);
+	}
+
 	if (status == SOPC_STATUS_OK && !retryNodeIds.empty())
 	{
 		int retryRound = 0;
 		const int maxRetryRounds = 12;
 		const int maxRetryDelaySeconds = 30;
 		int retryDelay = 2;
+		size_t permanentlyFailed = 0;
 		while (!retryNodeIds.empty() && retryRound < maxRetryRounds &&
 			   !m_stopped.load() && status == SOPC_STATUS_OK)
 		{
 			retryRound++;
 			for (int waited = 0; waited < retryDelay && !m_stopped.load(); waited++)
 				std::this_thread::sleep_for(std::chrono::seconds(1));
+			if (m_stopped.load())
+				break;
 			retryDelay = std::min(retryDelay * 2, maxRetryDelaySeconds);
 
-			std::vector<std::string> pending;
+			std::vector<char *> pending;
 			pending.swap(retryNodeIds);
 			logger->warn("Retrying %u MonitoredItem(s) with recoverable status (round %d/%d)",
 						 (unsigned)pending.size(), retryRound, maxRetryRounds);
 
-			std::vector<char *> batch;
-			batch.reserve(pending.size());
-			for (size_t k = 0; k < pending.size(); k++)
-				batch.push_back(const_cast<char *>(pending[k].c_str()));
-
-			for (size_t k = 0; k < batch.size() && status == SOPC_STATUS_OK; k += miBlockSize)
+			for (size_t k = 0; k < pending.size() && !m_stopped.load(); k += miBlockSize)
 			{
-				size_t n = (batch.size() - k < miBlockSize) ? (batch.size() - k) : miBlockSize;
+				size_t n = (pending.size() - k < miBlockSize) ? (pending.size() - k) : miBlockSize;
 				size_t errs = 0;
-				if ((status = createS2MonitoredItems(&batch[k], n, false, &errs, &retryNodeIds)) == SOPC_STATUS_OK)
+				size_t retryBefore = retryNodeIds.size();
+				SOPC_ReturnStatus batchStatus = createS2MonitoredItems(&pending[k], n, false, &errs, &retryNodeIds);
+				if (batchStatus == SOPC_STATUS_OK || batchStatus == SOPC_STATUS_WOULD_BLOCK)
+				{
 					actualMonitoredItems += (n - errs);
+					permanentlyFailed += errs - (retryNodeIds.size() - retryBefore);
+				}
+				else
+				{
+					status = batchStatus;
+					break;
+				}
 			}
 		}
-		if (!retryNodeIds.empty())
-			logger->error("%u MonitoredItem(s) could not be registered after %d retry round(s)",
-						  (unsigned)retryNodeIds.size(), retryRound);
+		if (status != SOPC_STATUS_OK)
+			logger->error("Retry aborted: error %d after %d round(s)", (int)status, retryRound);
+		else if (!retryNodeIds.empty() || permanentlyFailed > 0)
+			logger->warn("Retry finished after %d round(s): %u permanently failed, %u still pending",
+						 retryRound, (unsigned)permanentlyFailed, (unsigned)retryNodeIds.size());
 		else
 			logger->info("All previously-failed MonitoredItems registered after %d retry round(s)", retryRound);
 	}
@@ -1443,14 +1459,12 @@ int OPCUA::subscribe()
 	if (status == SOPC_STATUS_OK)
 	{
 		logger->info("Added %u Monitored Items in %d calls",  actualMonitoredItems, callCount);
-		m_readyForData.store(true);
-		m_tstart = time(0);
 	}
 	else
 	{
 		logger->error("Error %d adding Monitored Items. Items added: %u of %u. CallCount: %d", status, actualMonitoredItems, m_numNodeIds, callCount);
 	}
-	
+
 	return (int)status;
 }
 
@@ -1953,7 +1967,7 @@ static bool isRecoverableMIStatus(SOPC_StatusCode code)
  * @param numErrors		Number of NodeIds in error that cannot become MonitoredItems (returned)
  * @return				S2OPC status code
  */
-SOPC_ReturnStatus OPCUA::createS2MonitoredItems(char *const *nodeIds, const size_t numNodeIds, bool logRevisions, size_t *numErrors, std::vector<std::string> *retryNodeIds)
+SOPC_ReturnStatus OPCUA::createS2MonitoredItems(char *const *nodeIds, const size_t numNodeIds, bool logRevisions, size_t *numErrors, std::vector<char *> *retryNodeIds)
 {
 	SOPC_ReturnStatus status = SOPC_STATUS_OK;
 
@@ -2015,7 +2029,7 @@ SOPC_ReturnStatus OPCUA::createS2MonitoredItems(char *const *nodeIds, const size
 				{
 					Logger::getLogger()->warn("Error 0x%08X: Creation of MonitoredItem for Node %s failed; will retry",
 											   code, nodeIds[i]);
-					retryNodeIds->emplace_back(nodeIds[i]);
+					retryNodeIds->push_back(nodeIds[i]);
 					numRecoverable++;
 				}
 				else
