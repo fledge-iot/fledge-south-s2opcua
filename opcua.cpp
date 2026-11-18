@@ -14,6 +14,7 @@
 #include <logger.h>
 #include <map>
 #include <unistd.h>
+#include <algorithm>
 #include <chrono>
 #include <math.h>
 #include <regex>
@@ -1377,6 +1378,7 @@ int OPCUA::subscribe()
 	i = 0;
 	bool logRevisions = true;
 	bool done = false;
+	std::vector<char *> retryNodeIds;
 	do
 	{
 		size_t numNodeIdsToAdd = miBlockSize;
@@ -1388,7 +1390,7 @@ int OPCUA::subscribe()
 
 		size_t numMonitoredItemErrors = 0;
 		logger->debug("createS2MonitoredItems call: i=%d, numNodeIdsToAdd=%d, totalMonitoredItems=%u, m_nodes.size()=%u", i, numNodeIdsToAdd, m_numNodeIds, m_nodes.size());
-		if ((status = createS2MonitoredItems(&m_nodeIds[i], numNodeIdsToAdd, logRevisions, &numMonitoredItemErrors)) == SOPC_STATUS_OK)
+		if ((status = createS2MonitoredItems(&m_nodeIds[i], numNodeIdsToAdd, logRevisions, &numMonitoredItemErrors, &retryNodeIds)) == SOPC_STATUS_OK)
 		{
 			actualMonitoredItems += (numNodeIdsToAdd - numMonitoredItemErrors);
 			logRevisions = false;
@@ -1401,15 +1403,68 @@ int OPCUA::subscribe()
 
 	if (status == SOPC_STATUS_OK)
 	{
-		logger->info("Added %u Monitored Items in %d calls",  actualMonitoredItems, callCount);
 		m_readyForData.store(true);
 		m_tstart = time(0);
+	}
+
+	if (status == SOPC_STATUS_OK && !retryNodeIds.empty())
+	{
+		int retryRound = 0;
+		const int maxRetryRounds = 12;
+		const int maxRetryDelaySeconds = 30;
+		int retryDelay = 2;
+		size_t permanentlyFailed = 0;
+		while (!retryNodeIds.empty() && retryRound < maxRetryRounds &&
+			   !m_stopped.load() && status == SOPC_STATUS_OK)
+		{
+			retryRound++;
+			for (int waited = 0; waited < retryDelay && !m_stopped.load(); waited++)
+				std::this_thread::sleep_for(std::chrono::seconds(1));
+			if (m_stopped.load())
+				break;
+			retryDelay = std::min(retryDelay * 2, maxRetryDelaySeconds);
+
+			std::vector<char *> pending;
+			pending.swap(retryNodeIds);
+			logger->warn("Retrying %u MonitoredItem(s) with recoverable status (round %d/%d)",
+						 (unsigned)pending.size(), retryRound, maxRetryRounds);
+
+			for (size_t k = 0; k < pending.size() && !m_stopped.load(); k += miBlockSize)
+			{
+				size_t n = (pending.size() - k < miBlockSize) ? (pending.size() - k) : miBlockSize;
+				size_t errs = 0;
+				size_t retryBefore = retryNodeIds.size();
+				SOPC_ReturnStatus batchStatus = createS2MonitoredItems(&pending[k], n, false, &errs, &retryNodeIds);
+				if (batchStatus == SOPC_STATUS_OK || batchStatus == SOPC_STATUS_WOULD_BLOCK)
+				{
+					actualMonitoredItems += (n - errs);
+					permanentlyFailed += errs - (retryNodeIds.size() - retryBefore);
+				}
+				else
+				{
+					status = batchStatus;
+					break;
+				}
+			}
+		}
+		if (status != SOPC_STATUS_OK)
+			logger->error("Retry aborted: error %d after %d round(s)", (int)status, retryRound);
+		else if (!retryNodeIds.empty() || permanentlyFailed > 0)
+			logger->warn("Retry finished after %d round(s): %u permanently failed, %u still pending",
+						 retryRound, (unsigned)permanentlyFailed, (unsigned)retryNodeIds.size());
+		else
+			logger->info("All previously-failed MonitoredItems registered after %d retry round(s)", retryRound);
+	}
+
+	if (status == SOPC_STATUS_OK)
+	{
+		logger->info("Added %u Monitored Items in %d calls",  actualMonitoredItems, callCount);
 	}
 	else
 	{
 		logger->error("Error %d adding Monitored Items. Items added: %u of %u. CallCount: %d", status, actualMonitoredItems, m_numNodeIds, callCount);
 	}
-	
+
 	return (int)status;
 }
 
@@ -1889,6 +1944,20 @@ SOPC_ReturnStatus OPCUA::deleteS2Subscription()
 	return status;
 }
 
+static bool isRecoverableMIStatus(SOPC_StatusCode code)
+{
+	switch (code)
+	{
+	case OpcUa_BadNodeIdUnknown:
+	case OpcUa_BadServerHalted:
+	case OpcUa_BadOutOfService:
+	case OpcUa_BadTimeout:
+		return true;
+	default:
+		return false;
+	}
+}
+
 /**
  * Create Monitored Items and add them to the S2OPC Subscription
  *
@@ -1898,7 +1967,7 @@ SOPC_ReturnStatus OPCUA::deleteS2Subscription()
  * @param numErrors		Number of NodeIds in error that cannot become MonitoredItems (returned)
  * @return				S2OPC status code
  */
-SOPC_ReturnStatus OPCUA::createS2MonitoredItems(char *const *nodeIds, const size_t numNodeIds, bool logRevisions, size_t *numErrors)
+SOPC_ReturnStatus OPCUA::createS2MonitoredItems(char *const *nodeIds, const size_t numNodeIds, bool logRevisions, size_t *numErrors, std::vector<char *> *retryNodeIds)
 {
 	SOPC_ReturnStatus status = SOPC_STATUS_OK;
 
@@ -1935,6 +2004,7 @@ SOPC_ReturnStatus OPCUA::createS2MonitoredItems(char *const *nodeIds, const size
 	else
 	{
 		bool oneSucceeded = false;
+		size_t numRecoverable = 0;
 		for (int32_t i = 0; i < monitoredItemsResponse.NoOfResults; i++)
 		{
 			if (SOPC_IsGoodStatus(monitoredItemsResponse.Results[i].StatusCode))
@@ -1950,19 +2020,27 @@ SOPC_ReturnStatus OPCUA::createS2MonitoredItems(char *const *nodeIds, const size
 											  monitoredItemsResponse.Results[i].RevisedQueueSize);
 					logRevisions = false;
 				}
-				Logger::getLogger()->debug("MonitoredItem %d for Node %s Id %u", i, m_nodeIds[i], monitoredItemsResponse.Results[i].MonitoredItemId);
+				Logger::getLogger()->debug("MonitoredItem %d for Node %s Id %u", i, nodeIds[i], monitoredItemsResponse.Results[i].MonitoredItemId);
 			}
 			else
 			{
-				// Execution will land here if a Data Change Filter with Deadband is configured for a non-numeric type
-				// or if the Deadband Type is not supported by the OPC UA server.
-				// Possible Status Codes are BadMonitoredItemFilterUnsupported (0x80440000) and BadFilterNotAllowed (0x80450000).
-				Logger::getLogger()->error("Error 0x%08X: Creation of MonitoredItem for Node %s failed",
-										   monitoredItemsResponse.Results[i].StatusCode, m_nodeIds[i]);
+				SOPC_StatusCode code = monitoredItemsResponse.Results[i].StatusCode;
+				if (retryNodeIds != NULL && isRecoverableMIStatus(code))
+				{
+					Logger::getLogger()->warn("Error 0x%08X: Creation of MonitoredItem for Node %s failed; will retry",
+											   code, nodeIds[i]);
+					retryNodeIds->push_back(nodeIds[i]);
+					numRecoverable++;
+				}
+				else
+				{
+					Logger::getLogger()->error("Error 0x%08X: Creation of MonitoredItem for Node %s failed",
+											   code, nodeIds[i]);
+				}
 				(*numErrors)++;
 			}
 		}
-		if (!oneSucceeded)
+		if (!oneSucceeded && numRecoverable == 0)
 		{
 			status = SOPC_STATUS_WOULD_BLOCK;
 		}
