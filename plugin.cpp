@@ -80,10 +80,11 @@ static const char *default_config = QUOTE({
     },
     "subscription" : {
         "description" : "OPC UA Variables or Objects to observe for data changes",
-        "type" : "list",
+        "type" : "JSON",
         "items": "string",
         "listName": "subscriptions",
         "default" : "{ \"subscriptions\" : [  \"ns=3;i=1001\", \"ns=3;i=1002\" ] }",
+        "group" : "Subscriptions",
         "displayName" : "OPC UA Node Subscriptions",
         "order" : "11"
     },
@@ -273,7 +274,7 @@ static const char *default_config = QUOTE({
         "displayName" : "CA Certificate Authority",
         "order" : "36",
         "group" : "OPC UA Security",
-        "validity" : " securityMode == \"Sign\" || securityMode == \"SignAndEncrypt\" "
+        "validity" : " securityMode == \"Sign\" || securityMode == \"SignAndEncrypt\" || userAuthPolicy == \"username\" "
     },
     "serverCert" : {
         "description" : "Server certificate file in DER format",
@@ -282,7 +283,7 @@ static const char *default_config = QUOTE({
         "displayName" : "Server Public Certificate",
         "order" : "37",
         "group" : "OPC UA Security",
-        "validity" : " securityMode == \"Sign\" || securityMode == \"SignAndEncrypt\" "
+        "validity" : " securityMode == \"Sign\" || securityMode == \"SignAndEncrypt\" || userAuthPolicy == \"username\" "
     },
     "clientCert" : {
         "description" : "Client certificate file in DER format",
@@ -291,7 +292,7 @@ static const char *default_config = QUOTE({
         "displayName" : "Client Public Certificate",
         "order" : "38",
         "group" : "OPC UA Security",
-        "validity" : " securityMode == \"Sign\" || securityMode == \"SignAndEncrypt\" "
+        "validity" : " securityMode == \"Sign\" || securityMode == \"SignAndEncrypt\" || userAuthPolicy == \"username\" "
     },
     "clientKey" : {
         "description" : "Client private key file in PEM format",
@@ -300,7 +301,7 @@ static const char *default_config = QUOTE({
         "displayName" : "Client Private Key",
         "order" : "39",
         "group" : "OPC UA Security",
-        "validity" : " securityMode == \"Sign\" || securityMode == \"SignAndEncrypt\" "
+        "validity" : " securityMode == \"Sign\" || securityMode == \"SignAndEncrypt\" || userAuthPolicy == \"username\" "
     },
     "caCrl" : {
         "description" : "Certificate Revocation List file in DER format",
@@ -309,7 +310,7 @@ static const char *default_config = QUOTE({
         "displayName" : "Certificate Revocation List",
         "order" : "40",
         "group" : "OPC UA Security",
-        "validity" : " securityMode == \"Sign\" || securityMode == \"SignAndEncrypt\" "
+        "validity" : " securityMode == \"Sign\" || securityMode == \"SignAndEncrypt\" || userAuthPolicy == \"username\" "
     },
     "controlList" : {
         "description" : "A list of node IDs for the OPC UA variables that may be written via the plugin.",

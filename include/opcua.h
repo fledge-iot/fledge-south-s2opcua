@@ -190,7 +190,7 @@ class OPCUA
 		std::string            	m_clientPrivate;
 		std::string            	m_certAuth;
 		std::string            	m_caCrl;
-		
+
 		int64_t             	m_publishPeriod;
 		int                 	m_nodeIdsSize;
 		int                 	m_miBlockSize;
